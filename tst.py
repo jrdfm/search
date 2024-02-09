@@ -75,17 +75,18 @@ def ingest_document(corpus_resource_name, display_name, url):
 
 	
 	try:
-		with urlopen(url) as f:
+		with urlopen(url, timeout=0.15) as f:
 			html = f.read().decode('utf-8')
 			chunker = HtmlChunker(
 				max_words_per_aggregate_passage=200,
-				greedily_aggregate_sibling_nodes=False)
+				greedily_aggregate_sibling_nodes=True,
+				html_tags_to_exclude={"noscript", "script", "style"},)
 			passages  = chunker.chunk(html)
 	except Exception as e:
-		pass
-		# print(f'ERROR: {e}')
+		# pass
+		print(f'ERROR: {e}')
 		# passages = [html]
-
+	
 	# Create `Chunk` entities.
 	chunks = []
 	for passage in passages:
@@ -119,7 +120,7 @@ if __name__ == "__main__":
 	import json
 	import google.generativeai as genai
 	from google_labs_html_chunker.html_chunker import HtmlChunker
-	
+	from google.ai import generativelanguage_v1beta
 	from urllib.request import urlopen
 	
 	service_account_file_name = 'service_account_key_.json'
@@ -127,7 +128,7 @@ if __name__ == "__main__":
 	from google.oauth2 import service_account
 	
 	credentials = service_account.Credentials.from_service_account_file(service_account_file_name)
-
+	
 	scoped_credentials = credentials.with_scopes(
 	['https://www.googleapis.com/auth/cloud-platform', 'https://www.googleapis.com/auth/generative-language.retriever'])
 
@@ -136,6 +137,9 @@ if __name__ == "__main__":
 	generative_service_client = glm.GenerativeServiceClient(credentials=scoped_credentials)
 	retriever_service_client = glm.RetrieverServiceClient(credentials=scoped_credentials)
 	permission_service_client = glm.PermissionServiceClient(credentials=scoped_credentials)
+
+
+
 		
 	
 	
@@ -160,7 +164,7 @@ if __name__ == "__main__":
 	# print(response.text)
 	
 
-
+	
 	
 	
 	genai.configure(api_key=GOOGLE_API_KEY)
@@ -168,21 +172,22 @@ if __name__ == "__main__":
 	
 	q = 'Trump news'
 	q = "Putin Tucker"
+	q = "What did putin and Tucker discuss?"
 	response = google_search(build_params(q,num = 10))
 	
 	corpus_ , corpus_resource_name, get_corpus_response = create_corpus("test")
 	# Set force to False if you don't want to delete non-empty corpora.
 	
-
+	
 	
 	for i in response['items']:
 		url, display_name = i['link'], i['title']
-		# print(f"URL : {url}  display_name : {display_name}\n")
+		print(f"URL : {url}  display_name : {display_name}\n")
 		try:
 			ingest_document(corpus_resource_name, display_name, url)
 		except Exception as e:
-			...
-			# print(e)
+			# ...
+			print(e)
 		# # ingest_document(corpus_resource_name, display_name, url)
 	
 	user_query = "What happened at todays supreme court hearing about Trump?"
@@ -202,6 +207,9 @@ if __name__ == "__main__":
 	string = "Compose an essay-style response, encompassing a title and summarizing remarks at the conclusion. Trim irrelevant \
 		content from the provided text, concentrating on the query: " + user_query + ". Deliver a minimum of three insightful \
 			sub-paragraphs,not in a list form, without explicitly mentioning titles, summaries, or sub-paragraphs in the response. The text to be refined is:"
+	string = "Compose an essay-style response. Trim irrelevant \
+		content from the provided text, concentrating on the query: " + user_query + ". Deliver a minimum of three insightful \
+			sub-paragraphs,not in a list form. The text to be refined is:"
 	for chunk in query_corpus_response.relevant_chunks:
 		string_value = chunk.chunk.data.string_value
 		if string_value:
@@ -210,11 +218,54 @@ if __name__ == "__main__":
 	
 	model = genai.GenerativeModel('gemini-pro')
 	# response = model.generate_content("What was todays supreme court hearing about?")
-	response = model.generate_content(string)
+	response = model.generate_content(string, stream = False)
 	
 	print(42*"__")
 	print(response.text)
+	# for chunk in response:
+	# 	print(response.text)
 	print(f'\n')
+	
+
+	
+	
+	# user_query = "What is the purpose of Project IDX?"
+	answer_style = "VERBOSE" # Or "ABSTRACTIVE", EXTRACTIVE
+	MODEL_NAME = "models/aqa"
+	
+	# Make the request
+	# corpus_resource_name is a variable set in the "Create a corpus" section.
+	# content = glm.Content(parts=[glm.Part(text=user_query)])
+	# retriever_config = glm.SemanticRetrieverConfig(source=corpus_resource_name, query=content)
+	# req = glm.GenerateAnswerRequest(model=MODEL_NAME,
+	# 								contents=[content],
+	# 								semantic_retriever=retriever_config,
+	# 								answer_style=answer_style)
+	# aqa_response = generative_service_client.generate_answer(req)
+	# print(aqa_response)	
+	
+	# generative_client = generativelanguage_v1beta.GenerativeServiceClient(credentials=scoped_credentials)
+	# retriever_client = generativelanguage_v1beta.RetrieverServiceClient(credentials=scoped_credentials)
+	# permission_client = generativelanguage_v1beta.PermissionServiceClient(credentials=scoped_credentials)	
+	
+	# def sample_list_corpora():
+	# 	# Create a client
+	# 	client = generativelanguage_v1beta.RetrieverServiceClient(credentials=scoped_credentials)
+		
+	# 	# Initialize request argument(s)
+	# 	request = generativelanguage_v1beta.ListCorporaRequest(
+	# 	)
+		
+	# 	# Make the request
+	# 	page_result = client.list_corpora(request=request)
+		
+	# 	# Handle the response
+	# 	for response in page_result:
+	# 		print(response)
+	
+	# sample_list_corpora()
+	
+
 	req = glm.DeleteCorpusRequest(name=corpus_resource_name, force=True)
 	delete_corpus_response = retriever_service_client.delete_corpus(req)
 	print("Successfully deleted corpus: " + corpus_resource_name)

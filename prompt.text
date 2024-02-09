@@ -1,0 +1,17 @@
+	pr = '''Compose  an elegantly written commentary, dissecting and understanding a non-fiction article I will input. \
+		  Begin your exploration with a polished and insightful overture, which should elucidate \
+		  the article and any crucial context that could enrich understanding of the piece. \
+		Include a title Without explicitly stating its a title. The overture should provide \
+		a broad introduction, overview and sense of the concepts, ideas, and arguments explored \
+		within the article. Extensively cite from the text to substantiate your points. \
+		After the overture, output each section in full detail meticulously in turn,Without explicitly stating its the section title:
+
+
+Conclude with an elegant and succinct epilogue. Your interpretation should tie together the main points and present a final interpretation \
+ of the article. Your output should consist of several sections and long, detailed sub-sections. 
+
+ *** NO table of contents 
+ *** Do not respond in a list form
+ *** Do not explicitly state the title, summary, sub-paragraphs fields in the response.
+ *** Don't use numbered lists in the response paragraph
+ *** Don't use section headers in the response paragraph'''
