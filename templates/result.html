@@ -1,12 +1,162 @@
+<!-- result.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Your Flask App - Result</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #1a1a1a; /* Dark background color */
+            color: #fff; /* Light text color */
+        }
+
+        .search-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        label {
+            font-size: 1.2em;
+            margin-bottom: 10px;
+            color: #fff; /* Light text color for labels */
+        }
+
+        input {
+            padding: 10px;
+            font-size: 1em;
+            background-color: #1a1a1a; /* Darker input background color */
+            color: #fff; /* Light text color for input */
+            border: none;
+            border-radius: 4px; /* Add border-radius for rounded corners */
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 1em;
+            background-color: #3498db; /* Blue color for the button */
+            color: #fff; /* Light text color for button */
+            border: none;
+            border-radius: 4px; /* Add border-radius for rounded corners */
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #2980b9; /* Darker blue color on hover */
+        }
+
+        .result-container {
+            text-align: center;
+            max-width: 800px; /* Adjust the max-width as needed */
+            margin: auto;
+        }
+
+        h2 {
+            color: #fff; /* Light text color for headings */
+        }
+
+        /* Styling for the result content */
+        .markdown-content {
+            background-color: #333; /* Darker background color for the result content */
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 20px;
+            text-align: left; /* Align text to the left within the content */
+        }
+
+        /* Additional styling for Markdown elements */
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4,
+        .markdown-content h5,
+        .markdown-content h6 {
+            color: #fff; /* Light text color for headings */
+        }
+
+        .markdown-content p {
+            margin-bottom: 15px;
+            color: #fff; /* Light text color for paragraphs */
+        }
+
+        .markdown-content ul,
+        .markdown-content ol {
+            margin-bottom: 15px;
+        }
+        
+        .markdown-content a {
+            color: #3498db;
+            text-decoration: none;
+        }
+
+        .markdown-content a:hover {
+            text-decoration: underline;
+        }
+
+        .loading-spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+            display: none; /* Initially hidden */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body>
-    <h2>Result:</h2>
-    {{ response|safe }}
+    <!-- Search box for another query -->
+
+
+	<div class="search-container">
+        <label for="additional_query">Search:</label>
+        <input type="text" id="additional_query" name="additional_query">
+        <button onclick="submitAdditionalQuery()">Submit</button>
+    </div>
+
+    
+    <!-- Loading spinner centered below the search box -->
+    <div class="loading-spinner"></div>
+    
+    <!-- Result content will be inserted here -->
+    <div id="result-content" class="markdown-content">{{ response|safe }}</div>
+    
+	<script>
+		// Function to submit another query
+		function submitAdditionalQuery() {
+			const additionalQuery = document.getElementById('additional_query').value;
+	
+			// Display the loading spinner
+			document.querySelector('.loading-spinner').style.display = 'block';
+	
+			// Encode the additional query and redirect to the result page
+			window.location.href = '/query?user_query=' + encodeURIComponent(additionalQuery);
+		}
+	
+		// Function to check for URL parameters and pre-fill the search box
+		function checkURLParameters() {
+			const urlParams = new URLSearchParams(window.location.search);
+			const additionalQuery = urlParams.get('additional_query');
+	
+			if (additionalQuery) {
+				document.getElementById('additional_query').value = decodeURIComponent(additionalQuery);
+			}
+		}
+	
+		// Check for URL parameters on page load
+		window.onload = checkURLParameters;
+	</script>
 </body>
 </html>

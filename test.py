@@ -23,6 +23,7 @@ import json
 service_account_file_name = 'service_account_key_.json'
 
 from google.oauth2 import service_account
+import html
 
 credentials = service_account.Credentials.from_service_account_file(service_account_file_name)
 
@@ -91,16 +92,19 @@ def sample_list_corpora(list_doc = False):
 	return ls
 
 def sample_list_documents(parent):
+	count = 0
 	# Initialize request argument(s)
 	request = glvb.ListDocumentsRequest(
 		parent=parent,
 	)
 	# Make the request
 	page_result = client.list_documents(request=request)
+	# print(page_result)
 	# Handle the response
 	for response in page_result:
-		print(f'	{response.name}')
-
+		count += 1
+		# print(f'	{response.name}')
+	return count
 
 def sample_query_corpus(name, q, n):
 	# Initialize request argument(s)
@@ -178,20 +182,46 @@ def create_document(corpus_name, doc_name, url):
 	return response.name
 
 def batch_create_chunks(doc_name, url):
-
-	try:
-		with urlopen(url, timeout=0.5) as f:
-			html = f.read().decode('utf-8')
-			chunker = HtmlChunker(
-				max_words_per_aggregate_passage=200,
-				greedily_aggregate_sibling_nodes=True,
-				html_tags_to_exclude={"noscript", "script", "style"},)
-			passages  = chunker.chunk(html)
-	except Exception as e:
-		# pass
-		print(f'ERROR: {e}')
-		# passages = [html]
 	
+	# try:
+	# 	with urlopen(url, timeout=0.75) as f:
+	# 		html = f.read().decode('utf-8')
+	
+	# except Exception as e:
+	# 	# pass
+	# 	try:
+	# 		headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0'} # I used headers because the site requires cookies
+	# 		html_content = requests.get(url, headers=headers).content
+	# 		html = html_content.unescape(html_content.decode('utf-8'))
+	# 	except Exception as e:
+			
+	# 		print(f'{e} {url}')
+	# 	# passages = [html]
+	# finally:
+	# 	chunker = HtmlChunker(
+	# 		max_words_per_aggregate_passage=200,
+	# 		greedily_aggregate_sibling_nodes=True,
+	# 		html_tags_to_exclude={"noscript", "script", "style"},)
+	# 	passages  = chunker.chunk(html)
+	
+	try:
+		with urlopen(url, timeout=0.75) as f:
+			html = f.read().decode('utf-8')
+	
+	except Exception as e:
+		try:
+			headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0'}
+			html_content = requests.get(url, headers=headers).content
+			html = html_content.decode('utf-8')
+		except Exception as e:
+			print(f'{e} {url}')
+
+	chunker = HtmlChunker(
+		max_words_per_aggregate_passage=200,
+		greedily_aggregate_sibling_nodes=True,
+		html_tags_to_exclude={"noscript", "script", "style"},
+	)
+	passages = chunker.chunk(html)
 	# Create `Chunk` entities.
 	chunks = []
 	for passage in passages:
@@ -210,81 +240,58 @@ def batch_create_chunks(doc_name, url):
 	# print(response)
 
 	# your_module.py
-def fun(user_query):
-	# Your implementation here
-	# Return the text response in Markdown format
-	return "### Hello, *Markdown* World!"
-
-
-if __name__ == "__main__":
-	
-
-	
-	genai.configure(api_key=GOOGLE_API_KEY)
-	
-	
-	
-	
-
-
-	# answer_style = "VERBOSE" # Or "ABSTRACTIVE", EXTRACTIVE
-	
+def fun(user_query, clean = None):
 	corpus_ls = sample_list_corpora(True)
-	# del_all_corpus(corpus_ls)
-	print(f'corpus_ls {corpus_ls}')
+	if clean: 
+		del_all_corpus(corpus_ls)
+		corpus_ls = None
+	# print(f'corpus_ls {corpus_ls}')
 	if not corpus_ls: 
 		corpus_name = create_corpus()
 	else:
 		corpus_name = corpus_ls[0]
 	
 	print(f'corpus_name: {corpus_name}')
+	n = sample_list_documents(corpus_name)
+	print(f'Number of documents in corpus: {n}')
+	
 	q = "What did putin and Tucker discuss?"
+	q = user_query
 	url = "https://time.com/6693098/vladimir-putin-tucker-carlson-interview-ukraine-gershkovich/"
 
 	
-
+	
 	response = google_search(build_params(q,num = 10))
 	for i in response['items']:
 		url, display_name = i['link'], i['title']
-		# print(f"URL : {url}  display_name : {display_name}\n")
-	try:
-		doc_n = create_document(corpus_name, display_name, url)
-		batch_create_chunks(doc_n, url)
-		# ingest_document(corpus_resource_name, display_name, url)
-	except Exception as e:
-		# ...
-		print(e)
-
-	# corpus_name = corpus_ls[0]
-	# sample_query_corpus(corpus_name,q,5)
-	
-	# doc_n = create_document(corpus_name, "putin_tucker", url)
-	
-	# print(doc_n)
-	
-	# print(f'create batch chunks for {doc_n}')
-	# batch_create_chunks(doc_n, url)
-	ret = sample_query_corpus(corpus_name,q,10)
+		# print(f"URL : {url}  display_name : {display_name}")
+		try:
+			doc_n = create_document(corpus_name, display_name, url)
+			batch_create_chunks(doc_n, url)
+			# print(f'Created document: {doc_n} with url: {url}  and display_name: {display_name}')
+			# ingest_document(corpus_resource_name, display_name, url)
+		except Exception as e:
+			...
+			# print(e)
+	n = sample_list_documents(corpus_name)
+	print(f'Number of documents in corpus after : {n}')
+	ret = sample_query_corpus(corpus_name,q,20)
 		
-	# string = "Compose an essay-style response. Trim irrelevant \
-	# content from the provided text, concentrating on the query: " + q + ". Deliver a minimum of three insightful \
-	# 	sub-paragraphs,not in a list form. The text to be refined is:"
 	qu = "Query: " + q
-	prompt = "Compose a VERBOSE essay-styled response. Deliver a minimum of three insightful \
-		sub-paragraphs. Trim irrelevant content from the provided Text, concentrating on the Query.\
-			Don't use numbered lists in the response paragraph"
 	
-
+	model_p  = genai.GenerativeModel('gemini-pro')
+	# qq = "what is Gamini Pro's knowledge cutoff date"
+	content = glvb.Content(parts=[glvb.Part(text=q)])
+	response_p = model_p.generate_content(contents=[content], stream = True)
+	response_p.resolve()
+	text = "The text to be refined is:\n" + response_p.text + ''.join(chunk.chunk.data.string_value for chunk in ret.relevant_chunks if chunk.chunk.data.string_value)
 	
-	# text = "The text to be refined is:"
-	
-	text = "The text to be refined is:\n" + ''.join(chunk.chunk.data.string_value for chunk in ret.relevant_chunks if chunk.chunk.data.string_value)
-	
-	
+	print(f'text: {text}')
 	model = genai.GenerativeModel('gemini-pro')
-
+	
 	
 	file_path = 'prompt.text'
+	file_path = 'pt.txt'
 
 	with open(file_path, 'r') as file:
 		prompt = file.read()
@@ -301,6 +308,19 @@ if __name__ == "__main__":
 	response.resolve()
 	print(response.text)
 	print(f'\n')
+	return response.text
+
+
+
+
+if __name__ == "__main__":
+	...
+	q = "What did putin and Tucker discuss?"
+	fun(q, True)
+	
+	# result_app.run(port=5001)
+
+
 	
 
 

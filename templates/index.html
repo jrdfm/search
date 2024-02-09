@@ -1,3 +1,4 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,38 +8,98 @@
     <style>
         body {
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
+            justify-content: center;
             height: 100vh;
             margin: 0;
+            background-color: #1c1c1c; /* Different shade of dark background color for the body */
+            color: #fff; /* Light text color */
         }
 
         form {
             text-align: center;
+            background-color: #121212; /* Dark background color for the form */
+            padding: 20px; /* Add padding for better visibility */
+            border-radius: 8px; /* Add border-radius for rounded corners */
         }
 
         label {
             display: block;
             margin-bottom: 10px;
+            color: #fff; /* Light text color for labels */
         }
-
+        
         input {
             width: 300px; /* Adjust the width as needed */
             padding: 10px;
             font-size: 16px;
+            background-color: #1a1a1a; /* Darker input background color */
+            color: #fff; /* Light text color for input */
+            border: none;
+            border-radius: 4px; /* Add border-radius for rounded corners */
         }
-
+        
         button {
             padding: 10px;
             font-size: 16px;
+            background-color: #3498db; /* Blue color for the button */
+            color: #fff; /* Light text color for button */
+            border: none;
+            border-radius: 4px; /* Add border-radius for rounded corners */
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #2980b9; /* Darker blue color on hover */
+        }
+        
+        .loading-spinner {
+            border: 8px solid #f3f3f3;
+            border-top: 8px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+            margin-top: 20px;
+            display: none; /* Initially hidden */
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <form action="/query" method="post">
-        <label for="user_query">Enter your query:</label>
+        <label for="user_query">Search:</label>
         <input type="text" id="user_query" name="user_query" required>
         <button type="submit">Submit</button>
     </form>
+    
+    <!-- Loading spinner centered below the form -->
+    <div class="loading-spinner"></div>
+    
+    <script>
+        // Function to check for URL parameters and pre-fill the search box
+        function checkURLParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const userQuery = urlParams.get('user_query');
+
+            if (userQuery) {
+                document.getElementById('user_query').value = decodeURIComponent(userQuery);
+            }
+        }
+
+        // Check for URL parameters on page load
+        window.onload = checkURLParameters;
+
+        // Simulate the delay (replace this with the actual asynchronous call)
+        document.querySelector('form').addEventListener('submit', function() {
+            // Display the loading spinner
+            document.querySelector('.loading-spinner').style.display = 'block';
+        });
+    </script>
 </body>
 </html>

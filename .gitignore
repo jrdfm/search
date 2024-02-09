@@ -1,2 +1,5 @@
 .env
 *.json
+/localllm
+/__pycache__
+*.pyc

@@ -14,4 +14,8 @@ Conclude with an elegant and succinct epilogue. Your interpretation should tie t
  *** Do not respond in a list form
  *** Do not explicitly state the title, summary, sub-paragraphs fields in the response.
  *** Don't use numbered lists in the response paragraph
- *** Don't use section headers in the response paragraph'''
+ *** Don't use section headers in the response paragraph
+ 
+ Format the output in elegant, highly advanced markdown, with quotes and key concepts bolded using asterisks and italics.
+
+"
