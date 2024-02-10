@@ -1,8 +1,6 @@
-Analyze and break down a non-fiction article provided to you. Make sure the response is verbose. Begin by giving a clear and insightful introduction, 
-helping readers understand the article and any necessary context. Back up your insights with quotes from the text. 
-After the introduction, dive into each section with careful commentary, avoiding the use of explicit titles for each part.
+Input Text Structure:
 
-Wrap it up with a straightforward conclusion that ties all the main points together, 
-providing your final take on the article. Keep the response connected without using explicit titles, 
-summaries, or numbered lists. Present your insights in an easy-to-follow Markdown format, 
-using quotes and emphasizing key concepts with bold and italicized formatting.
+Pre-response: Model's output without internet, given less weight for topical queries and those beyond the knowledge cutoff date (April 2023).
+Chunks: Segments from Google search results, each assigned a relevance score (0 to 1) indicating alignment with the user query.
+Query: User's original inquiry.
+Compose a commentary dissecting the Chunks and Pre-response. Begin with a concise overture, introducing key concepts without unnecessary embellishments. Subsequently, provide detailed analysis for each section, avoiding explicit section headers or enumerated lists. Conclude with a succinct epilogue tying together main points.

@@ -12,6 +12,8 @@ GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
 google_custom_search = os.getenv('google_custom_search')
 search_engine_id = os.getenv('search_engine_id')
 
+search_en_id = os.getenv('search_en_id')
+api_key = os.getenv('api_key')
 
 import google.generativeai as genai
 import google.ai.generativelanguage as glm
@@ -57,8 +59,8 @@ url_ = "https://www.googleapis.com/customsearch/v1"
 
 def build_params(search_query, num = 10, start=1, dateRestrict='d1',**kwargs):
 	params = { 'q': search_query, 
-		   	   'key': google_custom_search, 
-			   'cx': search_engine_id,
+		   	   'key': api_key, 
+			   'cx': search_en_id,
 			   'num': num,
 			   'start': 1,
 			   'dateRestrict': 'd1',
@@ -157,8 +159,7 @@ def del_all_corpus(corpus_ls):
 def create_corpus(name = "default"):
 	corpus_ = glvb.Corpus(display_name=name)
 	# Initialize request argument(s)
-	request = glvb.CreateCorpusRequest(corpus = corpus_
-	)
+	request = glvb.CreateCorpusRequest(corpus = corpus_)
 	# Make the request
 	response = client.create_corpus(request=request)
 
@@ -183,29 +184,9 @@ def create_document(corpus_name, doc_name, url):
 
 def batch_create_chunks(doc_name, url):
 	
-	# try:
-	# 	with urlopen(url, timeout=0.75) as f:
-	# 		html = f.read().decode('utf-8')
-	
-	# except Exception as e:
-	# 	# pass
-	# 	try:
-	# 		headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0'} # I used headers because the site requires cookies
-	# 		html_content = requests.get(url, headers=headers).content
-	# 		html = html_content.unescape(html_content.decode('utf-8'))
-	# 	except Exception as e:
-			
-	# 		print(f'{e} {url}')
-	# 	# passages = [html]
-	# finally:
-	# 	chunker = HtmlChunker(
-	# 		max_words_per_aggregate_passage=200,
-	# 		greedily_aggregate_sibling_nodes=True,
-	# 		html_tags_to_exclude={"noscript", "script", "style"},)
-	# 	passages  = chunker.chunk(html)
 	
 	try:
-		with urlopen(url, timeout=0.75) as f:
+		with urlopen(url, timeout=0.2) as f:
 			html = f.read().decode('utf-8')
 	
 	except Exception as e:
@@ -223,23 +204,30 @@ def batch_create_chunks(doc_name, url):
 	)
 	passages = chunker.chunk(html)
 	# Create `Chunk` entities.
-	chunks = []
-	for passage in passages:
-		chunk = glm.Chunk(data={'string_value': passage})
-		chunks.append(chunk)
+	# chunks = []
+	# for passage in passages:
+	# 	chunk = glm.Chunk(data={'string_value': passage})
+	# 	chunks.append(chunk)
+	chunks = [glm.Chunk(data={'string_value': passage}) for passage in passages]
+    
     # Initialize request argument(s)
 	create_chunk_requests = []
 	for chunk in chunks:
 		create_chunk_requests.append(glvb.CreateChunkRequest(parent=doc_name, chunk=chunk))
-
+	
 	request = glvb.BatchCreateChunksRequest(parent=doc_name, requests=create_chunk_requests)
 	# Make the request
 	response = client.batch_create_chunks(request=request)
+	
+	
 
+
+	
 	# Handle the response
 	# print(response)
 
 	# your_module.py
+from io import StringIO
 def fun(user_query, clean = None):
 	corpus_ls = sample_list_corpora(True)
 	if clean: 
@@ -251,14 +239,14 @@ def fun(user_query, clean = None):
 	else:
 		corpus_name = corpus_ls[0]
 	
-	print(f'corpus_name: {corpus_name}')
-	n = sample_list_documents(corpus_name)
-	print(f'Number of documents in corpus: {n}')
+	# print(f'corpus_name: {corpus_name}')
+	# n = sample_list_documents(corpus_name)
+	# print(f'Number of documents in corpus: {n}')
 	
 	q = "What did putin and Tucker discuss?"
 	q = user_query
 	url = "https://time.com/6693098/vladimir-putin-tucker-carlson-interview-ukraine-gershkovich/"
-
+	
 	
 	
 	response = google_search(build_params(q,num = 10))
@@ -275,30 +263,52 @@ def fun(user_query, clean = None):
 			# print(e)
 	n = sample_list_documents(corpus_name)
 	print(f'Number of documents in corpus after : {n}')
-	ret = sample_query_corpus(corpus_name,q,20)
+
+	# Query the corpus
+	ret = sample_query_corpus(corpus_name,q,10)
 		
 	qu = "Query: " + q
-	
+	# Generate pre response from the model without web 
 	model_p  = genai.GenerativeModel('gemini-pro')
-	# qq = "what is Gamini Pro's knowledge cutoff date"
+	
 	content = glvb.Content(parts=[glvb.Part(text=q)])
 	response_p = model_p.generate_content(contents=[content], stream = True)
 	response_p.resolve()
-	text = "The text to be refined is:\n" + response_p.text + ''.join(chunk.chunk.data.string_value for chunk in ret.relevant_chunks if chunk.chunk.data.string_value)
 	
-	print(f'text: {text}')
-	model = genai.GenerativeModel('gemini-pro')
+	chunks_to_concatenate = [(chunk.chunk_relevance_score, chunk.chunk.data.string_value) for chunk in ret.relevant_chunks if chunk.chunk.data.string_value]
+	with StringIO() as text_buffer:
+		text_buffer.write("Chunks:\n")
+		# text_buffer.write(response_p.text)
+		for relevance_score, chunk_text in chunks_to_concatenate:
+			text_buffer.write(f'\n{relevance_score}: {chunk_text}')
+		# text_buffer.write('\n'.join(chunks_to_concatenate))
+		text = text_buffer.getvalue()
+	
+	# print(f'text: {text}')
+	
 	
 	
 	file_path = 'prompt.text'
-	file_path = 'pt.txt'
-
+	# file_path = 'pt.txt'
+	
 	with open(file_path, 'r') as file:
 		prompt = file.read()
 	
+	pre_response = "Pre-response: " + response_p.text
+	content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=qu), glvb.Part(text=text), glvb.Part(text=pre_response)])
+	generation_config = {"temperature":0, "top_p":1, "top_k":1,"max_output_tokens":10000}
 	
-	content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=qu), glvb.Part(text=text)])
-	response = model.generate_content(contents=[content], stream = True)
+	from google.generativeai.types import HarmCategory, HarmBlockThreshold
+	
+	model = genai.GenerativeModel('gemini-pro', generation_config=generation_config, safety_settings={
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+		HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+		HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+    })
+	# model = genai.GenerativeModel('gemini-pro')
+	# response = model.generate_content(contents=[content], stream = True)
+	response = model.generate_content(contents=content, stream = True)
 	
 	print(42*"__")
 	# print(response.text)
@@ -310,13 +320,88 @@ def fun(user_query, clean = None):
 	print(f'\n')
 	return response.text
 
+from bs4 import BeautifulSoup
+import requests
+from google.generativeai.types import HarmCategory, HarmBlockThreshold
+generation_config = {"temperature":0, "top_p":1, "top_k":1,"max_output_tokens":10000}
+def fun_(q):
+	response = google_search(build_params(q,num = 10))
+	text_list = [] 
+	for i in response['items']:
+		url, display_name = i['link'], i['title']
+		print(f"URL : {url}  display_name : {display_name}")
+		try:
+			
+			text_list.append(html_txt(url))
+			# print(f'Created document: {doc_n} with url: {url}  and display_name: {display_name}')
+			# ingest_document(corpus_resource_name, display_name, url)
+		except Exception as e:
+			
+			print(e)
+	concatenated_text = "Chunks:" + '\n'.join(text_list)
+	
+	model = genai.GenerativeModel('gemini-pro', safety_settings={
+	HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
+	HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_NONE,
+	HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_NONE,
+	HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_NONE,
+	})
+	prompt = "Give a verbose summary of following text from a web search based on the query. \
+		  Return a markdown in a paragraph form with at least 3 paragraphs\
+		  The text is after the token Text: \
+		  The query is after the token Query: "
+	print(f'{concatenated_text}')
+	content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=q), glvb.Part(text=concatenated_text)])
+	# content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=q)])
+	# response = model.generate_content(contents=content, stream = True)
+	response = model.generate_content(contents=content, stream = False)
+	print(42*"__")
+	# print(response.text)
+	response.resolve()
+	# for chunk in response:
+	# 	print(chunk.text)
+	
+	print(response.text)
+	print(f'\n')
+	return response.text
 
 
+
+def extract_relevant_text(html):
+    soup = BeautifulSoup(html, 'html.parser')
+
+    # Extract text from all paragraphs
+    paragraphs = soup.find_all('p')
+    
+    # Concatenate text from all paragraphs
+    relevant_text = ' '.join([p.get_text() for p in paragraphs])
+    
+    return relevant_text
+def html_txt( url):
+	
+	try:
+		with urlopen(url, timeout=0.3) as f:
+			html = f.read().decode('utf-8')
+	
+	except Exception as e:
+		try:
+			headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0'}
+			html_content = requests.get(url, headers=headers, timeout= 0.1).content
+			html = html_content.decode('utf-8')
+		except Exception as e:
+			print(f'{e} {url}')
+
+	rel_txt = extract_relevant_text(html)
+	# Extract text content
+	return rel_txt
 
 if __name__ == "__main__":
-	...
+	# ...
 	q = "What did putin and Tucker discuss?"
-	fun(q, True)
+	fun(q, False)
+	# q = "Query: what is the plot of Tenet?"
+	# # q = "Query: What did putin and Tucker discuss?"
+	# fun_(q)
 	
 	# result_app.run(port=5001)
 

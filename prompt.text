@@ -1,4 +1,12 @@
-	pr = '''Compose  an elegantly written commentary, dissecting and understanding a non-fiction article I will input. \
+	The input text has the following parts
+	Pre-response: The response of the model without internet. You should give this less attention if the query is topical and after the models knowledge
+	cut off date. (which is April 2023) 
+	Chunks: chunks of text from google internet search. Each chunk is preceded by a number,between 0 and 1, showing its relevance score which shows its
+	correspondence with the query. You should give more relevant chunks more attention in the summary response.
+	Query: The original query the user requested
+	
+	
+	Compose  an elegantly written commentary, dissecting and understanding the Chunks and Pre-response in the input. \
 		  Begin your exploration with a polished and insightful overture, which should elucidate \
 		  the article and any crucial context that could enrich understanding of the piece. \
 		Include a title Without explicitly stating its a title. The overture should provide \
@@ -9,7 +17,7 @@
 
 Conclude with an elegant and succinct epilogue. Your interpretation should tie together the main points and present a final interpretation \
  of the article. Your output should consist of several sections and long, detailed sub-sections. 
-
+ 
  *** NO table of contents 
  *** Do not respond in a list form
  *** Do not explicitly state the title, summary, sub-paragraphs fields in the response.
@@ -18,4 +26,4 @@ Conclude with an elegant and succinct epilogue. Your interpretation should tie t
  
  Format the output in elegant, highly advanced markdown, with quotes and key concepts bolded using asterisks and italics.
 
-"
+

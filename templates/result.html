@@ -67,7 +67,10 @@
             padding: 20px;
             border-radius: 8px;
             margin-top: 20px;
-            text-align: left; /* Align text to the left within the content */
+            text-align: justify; /* Align text to justify within the content */
+            margin-left: 40px; /* Add left margin */
+            margin-right: 40px; /* Add right margin */
+            line-height: 1.6; /* Adjust line height for better readability */
         }
 
         /* Additional styling for Markdown elements */
@@ -118,14 +121,11 @@
 </head>
 <body>
     <!-- Search box for another query -->
-
-
-	<div class="search-container">
+    <div class="search-container">
         <label for="additional_query">Search:</label>
         <input type="text" id="additional_query" name="additional_query">
         <button onclick="submitAdditionalQuery()">Submit</button>
     </div>
-
     
     <!-- Loading spinner centered below the search box -->
     <div class="loading-spinner"></div>
@@ -133,30 +133,30 @@
     <!-- Result content will be inserted here -->
     <div id="result-content" class="markdown-content">{{ response|safe }}</div>
     
-	<script>
-		// Function to submit another query
-		function submitAdditionalQuery() {
-			const additionalQuery = document.getElementById('additional_query').value;
-	
-			// Display the loading spinner
-			document.querySelector('.loading-spinner').style.display = 'block';
-	
-			// Encode the additional query and redirect to the result page
-			window.location.href = '/query?user_query=' + encodeURIComponent(additionalQuery);
-		}
-	
-		// Function to check for URL parameters and pre-fill the search box
-		function checkURLParameters() {
-			const urlParams = new URLSearchParams(window.location.search);
-			const additionalQuery = urlParams.get('additional_query');
-	
-			if (additionalQuery) {
-				document.getElementById('additional_query').value = decodeURIComponent(additionalQuery);
-			}
-		}
-	
-		// Check for URL parameters on page load
-		window.onload = checkURLParameters;
-	</script>
+    <script>
+        // Function to submit another query
+        function submitAdditionalQuery() {
+            const additionalQuery = document.getElementById('additional_query').value;
+
+            // Display the loading spinner
+            document.querySelector('.loading-spinner').style.display = 'block';
+
+            // Encode the additional query and redirect to the result page
+            window.location.href = '/query?user_query=' + encodeURIComponent(additionalQuery);
+        }
+
+        // Function to check for URL parameters and pre-fill the search box
+        function checkURLParameters() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const additionalQuery = urlParams.get('additional_query');
+
+            if (additionalQuery) {
+                document.getElementById('additional_query').value = decodeURIComponent(additionalQuery);
+            }
+        }
+
+        // Check for URL parameters on page load
+        window.onload = checkURLParameters;
+    </script>
 </body>
 </html>
