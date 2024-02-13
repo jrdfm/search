@@ -326,19 +326,26 @@ from google.generativeai.types import HarmCategory, HarmBlockThreshold
 generation_config = {"temperature":0, "top_p":1, "top_k":1,"max_output_tokens":10000}
 def fun_(q):
 	response = google_search(build_params(q,num = 10))
-	text_list = [] 
+	
+	
+	data = []
+	res = ""
 	for i in response['items']:
 		url, display_name = i['link'], i['title']
-		print(f"URL : {url}  display_name : {display_name}")
-		try:
-			
-			text_list.append(html_txt(url))
-			# print(f'Created document: {doc_n} with url: {url}  and display_name: {display_name}')
-			# ingest_document(corpus_resource_name, display_name, url)
-		except Exception as e:
-			
-			print(e)
-	concatenated_text = "Chunks:" + '\n'.join(text_list)
+		print(f"URL : {url}  display_name : {display_name}\n")
+		result = html_txt(url)
+		res += result
+		data.append((url, display_name, result))
+		# print(result)
+	
+	# df = pd.DataFrame(data, columns=["Url","Display Name","Result"])
+	# # print(df)
+	# df.to_csv("output.csv")
+	
+
+	
+	
+	concatenated_text = "Chunks:" + res
 	
 	model = genai.GenerativeModel('gemini-pro', safety_settings={
 	HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_NONE,
@@ -350,26 +357,27 @@ def fun_(q):
 		  Return a markdown in a paragraph form with at least 3 paragraphs\
 		  The text is after the token Text: \
 		  The query is after the token Query: "
-	print(f'{concatenated_text}')
+	# print(f'{concatenated_text}')
 	content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=q), glvb.Part(text=concatenated_text)])
 	# content = glvb.Content(parts=[glvb.Part(text=prompt), glvb.Part(text=q)])
 	# response = model.generate_content(contents=content, stream = True)
-	response = model.generate_content(contents=content, stream = False)
+	response = model.generate_content(contents=content, stream = True)
 	print(42*"__")
-	# print(response.text)
-	response.resolve()
-	# for chunk in response:
-	# 	print(chunk.text)
-	
 	print(response.text)
-	print(f'\n')
+	response.resolve()
+	for chunk in response:
+		print(chunk.text)
+	
+	# print(response.text)
+	# print(f'\n')
 	return response.text
+	# return res
 
 
 
 def extract_relevant_text(html):
     soup = BeautifulSoup(html, 'html.parser')
-
+    
     # Extract text from all paragraphs
     paragraphs = soup.find_all('p')
     
@@ -380,33 +388,64 @@ def extract_relevant_text(html):
 def html_txt( url):
 	
 	try:
-		with urlopen(url, timeout=0.3) as f:
+		with urlopen(url, timeout=0.5) as f:
 			html = f.read().decode('utf-8')
 	
 	except Exception as e:
 		try:
 			headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:77.0) Gecko/20190101 Firefox/77.0'}
-			html_content = requests.get(url, headers=headers, timeout= 0.1).content
+			html_content = requests.get(url, headers=headers, timeout= 5).content
 			html = html_content.decode('utf-8')
 		except Exception as e:
 			print(f'{e} {url}')
-
-	rel_txt = extract_relevant_text(html)
+	
+	# rel_txt = extract_relevant_text(html)
+	rel_txt = get_plain_text(html)
 	# Extract text content
 	return rel_txt
+
+def get_plain_text(html):
+	soup = BeautifulSoup(html, features='lxml')
+	return soup.getText().strip()
+	
 
 if __name__ == "__main__":
 	# ...
 	q = "What did putin and Tucker discuss?"
-	fun(q, False)
+	# fun(q, False)
 	# q = "Query: what is the plot of Tenet?"
 	# # q = "Query: What did putin and Tucker discuss?"
-	# fun_(q)
+	print(fun_(q))
 	
 	# result_app.run(port=5001)
+	response = google_search(build_params(q,num = 3))
 
-
+	# print(f'json: {response_j}')
+	# print(f"response: {response['items']}")
+	import pandas as pd
+	# data = []
+	# for i in response_j['items']:
+	# 	url, display_name = i['link'], i['title']
+	# 	print(f"URL : {url}  display_name : {display_name}\n")
+	# 	result = html_txt(url)
+	# 	data.append((url, display_name, result))
+	# 	# print(result)
 	
+	# df = pd.DataFrame(data, columns=["Url","Display Name","Result"])
+	# # print(df)
+	# df.to_csv("output.csv")
+	
+	# from bs4 import BeautifulSoup
+	
+	
+	
+	# def get_plain_text(html):
+	# 	soup = BeautifulSoup(html, features='lxml')
+	# 	return soup.getText().strip()
+	
+	# result = html_txt(url)
+	
+	# print(result)
 
 
 

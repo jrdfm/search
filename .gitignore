@@ -3,3 +3,4 @@
 /localllm
 /__pycache__
 *.pyc
+/chroma_db

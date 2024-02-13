@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 # app.py
 from flask import Flask, render_template, request
-from test import fun  # Import your implementation of the 'fun' function
+from main_ import run  # Import your implementation of the 'fun' function
 import markdown2
 
 app = Flask(__name__)
@@ -17,7 +17,7 @@ def query():
     else:
         user_query = request.args.get('user_query')
 
-    response_text = fun(user_query, False)  # Call your 'fun' function with the user query
+    response_text = run(user_query)  # Call your 'fun' function with the user query
 
     if isinstance(response_text, list):
         # If the response is a list, assume it's a list of parts and concatenate them
