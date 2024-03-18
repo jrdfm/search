@@ -131,7 +131,7 @@ if __name__ == "__main__":
 	
 	scoped_credentials = credentials.with_scopes(
 	['https://www.googleapis.com/auth/cloud-platform', 'https://www.googleapis.com/auth/generative-language.retriever'])
-
+	
 	
 	import google.ai.generativelanguage as glm
 	generative_service_client = glm.GenerativeServiceClient(credentials=scoped_credentials)
@@ -139,7 +139,7 @@ if __name__ == "__main__":
 	permission_service_client = glm.PermissionServiceClient(credentials=scoped_credentials)
 
 
-
+	
 		
 	
 	

@@ -1,0 +1,894 @@
+17 Loot: lambda the ultimate►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►17Loot:lambda the ultimate17.1Functions in their most general form17.2Long Live Lambda!17.3Lambda is Dead!17.4Defunctionalization at work17.5Compiling Loot17.6Compiling Function Definitions17.7Save the Environment:Create a Closure!17.8Calling Functions17.9Recursive Functions17.10A Complete CompilerOn this page:17.1Functions in their most general form17.2Long Live Lambda!17.3Lambda is Dead!17.4Defunctionalization at work17.5Compiling Loot17.6Compiling Function Definitions17.7Save the Environment:Create a Closure!17.8Calling Functions17.9Recursive Functions17.10A Complete Compiler8.3contents← prevupnext →17Loot: lambda the ultimate17.1Functions in their most general form17.2Long Live Lambda!17.3Lambda is Dead!17.4Defunctionalization at work17.5Compiling Loot17.6Compiling Function Definitions17.7Save the Environment: Create a Closure!17.8Calling Functions17.9Recursive Functions17.10A Complete Compiler17.1Functions in their most general formWe’ve added function calls and function definitions, but what we don’t
+have and really should is functionvalues.Programming with functions as values is a powerful idiom that is at
+the heart of both functional programming and object-oriented
+programming, which both center around the idea that computation itself
+can be packaged up in a suspended form as a value and later run.Now we’re ready to deal with functions in their most general form:λ-expressions.Let’s call itLoot.We addλ-expressions to the syntax of expressions:(λ(x0...)e0)Herex0...are the formal parameters of the function ande0is the body.The syntax is evocative of function definitions:(define(fx0...)e0)However, you’ll notice:There is no function name in theλ-expression; it is ananonymousfunction.The new form is an expression—it can appear any where as a
+subexpression in a program, whereas definitions were restricted to be
+at the top-level.There also is a syntactic relaxation on the grammar of application
+expressions (a.k.a. function calls).  Previously, a function call
+consisted of a function name and some number of arguments:(fe0...)But since functions will now be considered values, we can generalize
+what’s allowed in the function position of the syntax for calls to be
+an arbitrary expression.  That expression is expected to produce a
+function value (and this expectation gives rise to a new kind of
+run-time error when violated: applying a non-function to arguments),
+which can called with the value of the arguments.Hence the syntax is extended to:(ee0...)In particular, the function expression can be aλ-expression,
+e.g.:((λ(x)(+xx))10)But also it may be expression which produces a function, but isn’t
+itself aλ-expression:(define(addern)(λ(x)(+xn)))((adder5)10)Here,(adder5)is the function position of((adder5)10).  That subexpression is itself a function call expression,
+callingadderwith the argument5.  The result of
+that subexpression is a function that, when applied, adds5to its argument.In terms of the AST, here’s how we model the extended syntax:loot/ast.rkt#langracket;;typeExpr=...;;|(AppExpr(ListofExpr));;|(Lam(ListofId)Expr)So for example, the expression((adder5)10)would be parsed
+as:(App(App(Var'adder)(Int5))(Int10))and(λ(x)(+xn))would be parsed as:(Lam(list'x)(Prim2'+(Var'x)(Var'n)))We will actually use a slight tweak of this AST when it comes to
+representing the syntax ofλ-expressions.  Although functions
+are anynomous, it will nonetheless be useful to syntactically
+distinguish oneλ-expressionoccurrencefrom an
+otherwise identical occurrence.Consider for example:(let((g1(let((x100))(λ(y)(+xy))))(g2(let((x9))(λ(y)(+xy)))))...)This program has two occurrences of the expression(λ(y)(+xy)).  Even though these expressions are identical and both evaluate
+to functions, theydo notevaluate to the same function!  One
+is the “add 100” function and the other is the “add 9” function.It will be useful to distinguish these two occurrences so we can talk
+aboutthisorthatλ-expression.The way we accomplish this is we will assume the AST representation of
+each distinct occurrence of aλ-expression has it’s own
+unique name (represented with a symbol).  We choose to have the parser
+take of labellingλ-expressions by inserting agensym’d symbol.  So, we touch-up theLamAST type
+definition as follows:;type Expr = ...;| (Lam Id (Listof Id) Expr)and these two occurrence would be distinguished by having distinct
+symbols for the label of the expression:Examples>(Lam(gensym)(list'x)(Prim2'+(Var'x)(Var'y)))'#s(Lam g6734 (x) #s(Prim2 + #s(Var x) #s(Var y)))>(Lam(gensym)(list'x)(Prim2'+(Var'x)(Var'y)))'#s(Lam g6735 (x) #s(Prim2 + #s(Var x) #s(Var y)))17.2Long Live Lambda!Let’s start by developing the interpreter for Loot, where the relevant
+forms areλs and applications:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)'...][(Appees)'...]))These two parts of the interpreter must fit together:λis
+the constructor for functions and application is deconstructor.  An
+application will evaluate all its subexpressions and the value
+produced byeought to be the kind of value constructed byλ.  That value needs to include all the necessary information
+to, if given the values of the argumentses, evaluate the
+body of the function in an environment associating the parameter names
+with the arguments’ values.So how should functions berepresented?  Here is a simple idea
+following the pattern we’ve used frequently in the interpreter:Q: How can we represent strings?A: With strings!Q: How can we represent booleans?A: With booleans!Q: How can we represent numbers?A: With numbers!Q: How can we represent pairs?A: With pairs!Q: etc.A: etc.So now:Q: How can we represent functions?A: With functions!?Great, so we will use function to represent functions.  We can
+implement function application with function application.  Let’s fill
+in what we know so far:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(λ???'...)][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(applyfvs)])])]))It’s not totally clear what parameters the representation of a
+function should have or what we should in the body of that function.
+However, the code in the interpretation of an application sheds light
+on both.  First, it’s clear a function should potentially take any
+number of arguments:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(λvs'...)][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(applyfvs)])])]))Second, what should happen when a function is applied?  It should
+produce the answer produced by the body of theλexpression
+in an environment that associatesxswithvs.
+Translating that to code, we get:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(λvs(interp-enve(zipxsvs)ds))][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(applyfvs)])])]))And now we have simultaneously arrived at our representation of function values:;type Value =;| ....;| (Value ... -> Answer)and completed the implementation of the interpreter.There are, however, problems.For one, this approach does not model howλ-expressions are
+able to capture the environment in which they are evaluated.  Consider:(let((y8))(λ(x)(+xy)))This evaluates to a function that, when applied, should add 8 to its
+argument.  It does so by evaluating the body of theλ, but in
+an environment that both associatesxwith the value of the
+argument, but also associatesywith8.  That
+association comes from the environment in place when theλ-expression is evaluated.  The interpreter as written will
+consideryis unbound!The solution is easy: in order for (Loot) functions to capture their
+(implicit) environment, we should capture the (explicit) environment
+in the (Racket) function:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(λvs(interp-enve(append(zipxsvs)r))ds)][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(applyfvs)])])]))The last remaining issue is we should do some type and arity-checking:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(λvs;check arity matches(if(=(lengthxs)(lengthvs))(interp-enve(append(zipxsvs)r)ds)'err))][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(if(procedure?f)(applyfvs)'err)])])]))We have a final issue to deal with.  What should we do about
+references to functions defined at the top-level of the program?  In
+other words, how do we make function applicaton when the function was
+defined withdefine?One possible answer to re-use our new power oflambda-expression by consideringdefine-bound names
+as just regular old variables, but changing the way that variables are
+interpreted so that when evaluating a variable that is not bound in
+the local environment, we consult the program definitions and
+construct the function value at that moment.There will turn out to be a better, more uniform approach, but this we
+will work for now and is simple.So for now we interpret variables as follows:;Id Env [Listof Defn] -> Answer(define(interp-varxrds)(match(lookuprx)['err(match(defns-lookupdsx)[(Defnfxse)(interp-env(Lamfxse)'()ds)][#f'err])][vv]))You’ll notice that the function is constructed by interpreting alambda-expression corresponding to the function definition
+and that this happens in an empty environment; that’s because function
+definitions can only occur at the top-level and therefore the only
+variables they can reference are otherdefine-bound
+functions, given inds.The complete interpreter is:loot/interp.rkt#langracket(provideinterpinterp-env)(require"ast.rkt""env.rkt""interp-prims.rkt");;typeAnswer=Value|'err;;typeValue=;;|Integer;;|Boolean;;|Character;;|Eof;;|Void;;|'();;|(consValueValue);;|(boxValue);;|(vectorValue...);;|(stringChar...);;|(Value...->Answer);;typeREnv=(Listof(ListIdValue));;typeDefns=(ListofDefn);;Prog->Answer(define(interpp)(matchp[(Progdse)(interp-enve'()ds)]));;ExprEnvDefns->Answer(define(interp-enverds)(matche[(Inti)i][(Boolb)b][(Charc)c][(Eof)eof][(Empty)'()][(Varx)(interp-varxrds)][(Strs)(string-copys)][(Prim0'void)(void)][(Prim0'read-byte)(read-byte)][(Prim0'peek-byte)(peek-byte)][(Prim1pe)(match(interp-enverds)['err'err][v(interp-prim1pv)])][(Prim2pe1e2)(match(interp-enve1rds)['err'err][v1(match(interp-enve2rds)['err'err][v2(interp-prim2pv1v2)])])][(Prim3pe1e2e3)(match(interp-enve1rds)['err'err][v1(match(interp-enve2rds)['err'err][v2(match(interp-enve3rds)['err'err][v3(interp-prim3pv1v2v3)])])])][(Ifpe1e2)(match(interp-envprds)['err'err][v(ifv(interp-enve1rds)(interp-enve2rds))])][(Begine1e2)(match(interp-enve1rds)['err'err][_(interp-enve2rds)])][(Letxe1e2)(match(interp-enve1rds)['err'err][v(interp-enve2(extrxv)ds)])][(Lam_xse)(λvs;checkaritymatches(if(=(lengthxs)(lengthvs))(interp-enve(append(zipxsvs)r)ds)'err))][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(if(procedure?f)(applyfvs)'err)])])][(Matchepses)(match(interp-enverds)['err'err][v(interp-matchvpsesrds)])]));;Value[ListofPat][ListofExpr]EnvDefns->Answer(define(interp-matchvpsesrds)(match*(pses)[('()'())'err][((conspps)(consees))(match(interp-match-patpvr)[#f(interp-matchvpsesrds)][r(interp-enverds)])]));;PatValueEnv->[MaybeEnv](define(interp-match-patpvr)(matchp[(PWild)r][(PVarx)(extrxv)][(PLitl)(and(eqv?lv)r)][(PBoxp)(matchv[(boxv)(interp-match-patpvr)][_#f])][(PConsp1p2)(matchv[(consv1v2)(match(interp-match-patp1v1r)[#f#f][r1(interp-match-patp2v2r1)])][_#f])][(PAndp1p2)(match(interp-match-patp1vr)[#f#f][r1(interp-match-patp2vr1)])]));;IdEnv[ListofDefn]->Answer(define(interp-varxrds)(match(lookuprx)['err(match(defns-lookupdsx)[(Defnfxse)(interp-env(Lamfxse)'()ds)][#f'err])][vv]));;(ListofExpr)REnvDefns->(ListofValue)|'err(define(interp-env*esrds)(matches['()'()][(consees)(match(interp-enverds)['err'err][v(match(interp-env*esrds)['err'err][vs(consvvs)])])]));;DefnsSymbol->[MaybeDefn](define(defns-lookupdsf)(findf(match-lambda[(Defng__)(eq?fg)])ds))(define(zipxsys)(match*(xsys)[('()'())'()][((consxxs)(consyys))(cons(listxy)(zipxsys))]))We now have the full power ofλexpressions in our language.
+We can write recursive functions, using only anonymous functions, via
+the Y-combinator:Examples>(define(run.p)(interp(parsep)))>(run'(λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z)))))))#<procedure:...ngs/loot/interp.rkt:78:5>For example, computing the triangular function applied to 10:Examples>(run'(((λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z))))))(λ(tri)(λ(n)(if(zero?n)0(+n(tri(sub1n)))))))36))666One of the niceties of using Racket functions to represent Loot
+functions is we can define Racket functions via the interpretation of
+Loot functions:Examples>(defineY(run'(λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z))))))))>(definetri(run'(λ(tri)(λ(n)(if(zero?n)0(+n(tri(sub1n))))))))And then use them from within Racket:Examples>((Ytri)36)666We can also “import” Racket functions in to Loot:Examples>(interp-env(parse-e'(expt210))(list(list'exptexpt))'())102417.3Lambda is Dead!Now the question you might naturally wonder is: how does implementing
+functions in terms of functions help me implement functions in x86,
+which after all, doesn’t haveλ?The answer is that from this point, in which we have an understandable
+account of functions, we can iteratively revise the interpreter to
+eliminate the use of functions while computing equivalent results.
+Doing so will shed light on the lower-level implementation of
+functions in the compiler.Consider again what it is that aλ-expression is doing for
+you:it is packaging up the parameters, body, and environment, so
+thatwhen applied it can evaluate the body, binding the parameters,
+in an extension of the functions environment.We can achive these things without using a function value by:creating a data structure to hold the parameters, body, and environment, andrewriting the application of the function to use those values to evaluate
+the body, binding the parameters, etc.So we are changing the representation of functions from:And now we have simultaneously arrived at our representation of function values:;type Value =;| ....;| (Value ... -> Answer)To:;type Value =;| ....;| (Closure [Listof Id] Expr Env)When aλis evaluated, a closure is created.  When a function
+is applied, we deconstruct the closure and execute the code that used
+to be in the (Racket) function:;Expr REnv Defns -> Answer(define(interp-enverds)(matche;...[(Lam_xse)(Closurexser)][(Appees)(match(interp-enverds)['err'err][f(match(interp-env*esrds)['err'err][vs(matchf[(Closurexser);check arity matches(if(=(lengthxs)(lengthvs))(interp-enve(append(zipxsvs)r)ds)'err)][_'err])])])]))We can give it a try:Examples>(define(run.p)(interp(parsep)))>(run'(λ(x)x))'#s(Closure (x) #s(Var x) ())>(run'((λ(x)(λ(y)x))8))'#s(Closure (y) #s(Var x) ((x 8)))Notice in the second example how the closure contains the body of the
+function and the environment mapping the free variable:'xto
+8.We can also confirm our larger example works:Examples>(run'(((λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z))))))(λ(tri)(λ(n)(if(zero?n)0(+n(tri(sub1n)))))))36))666While can’t apply the interpretation of functions in Racket
+like we did previously, we canapply-functionthe
+interpretation of functions:Examples>(defineY(run'(λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z))))))))>(definetri(run'(λ(tri)(λ(n)(if(zero?n)0(+n(tri(sub1n))))))));Value Value ... -> Answer>(define(apply-functionf.vs)(matchf[(Closurexser);check arity matches(if(=(lengthxs)(lengthvs))(interp-enve(append(zipxsvs)r)'())'err)][_'err]))>(apply-function(apply-functionYtri)36)666The process we used to eliminate function values from the interpreter
+is an instance of a general-purpose whole-program transformation
+calleddefunctionalizationfor replacing function values with
+data structures.17.4Defunctionalization at workLet’s digress for a moment and learn this very useful transformation.Here is a data type for representing regular expressions:;type Regexp =;|'zero;|'one;|‘(char ,Char);|‘(times ,Regexp ,Regexp);|‘(plus ,Regexp ,Regexp);|‘(star ,Regexp)The regular expression'zeromatches nothing;'onematches the empty string;`(char,c)matches the characterc;`(times,r1,r2)matches the concatenation of
+a string matchingr1followed by a string matchingr2;`(plus,r1,r2)matching either a string
+matchingr1or a string matchingr2; and`(star,r)matches a string made up of any number of
+substrings, each of which matchr.A really nice way to write a matcher is to use a continuation-passing
+style that keeps track of what is required of the remainder of the
+string after matching a prefix against the regexp:loot/regexp.rkt#langracket(provideaccepts);;typeRegexp=;;|'zero;;|'one;;|`(char,Char);;|`(times,Regexp,Regexp);;|`(plus,Regexp,Regexp);;|`(star,Regexp);;RegexpString->Boolean(define(acceptsrs)(matcherr(string->lists)(λ(cs)(empty?cs))));;Regexp(ListofChar)((ListofChar)->Bool)->Bool(define(matcherrcsk)(matchr['zero#f]['one(kcs)][`(char,c)(matchcs['()#f][(consdcs)(and(char=?cd)(kcs))])][`(plus,r1,r2)(or(matcherr1csk)(matcherr2csk))][`(times,r1,r2)(matcherr1cs(λ(cs)(matcherr2csk)))][`(star,r)(letrec((matcher*(λ(cs)(or(kcs)(matcherrcsmatcher*)))))(matcher*cs))]))Let’s give it a try:Examples>(accepts`(star(char#\a))"aaaaa")#t>(accepts`(star(char#\a))"aaaab")#f>(accepts`(star(plus(char#\a)(char#\b)))"aaaab")#tBut what if needed to program this regular expression matching without
+the use of function values?  We can arrive at such code systematically
+by applying defunctionalization.loot/regexp-defun.rkt#langracket(provideaccepts);;typeRegexp=;;|'zero;;|'one;;|`(char,Char);;|`(times,Regexp,Regexp);;|`(plus,Regexp,Regexp);;|`(star,Regexp);;typeK=;;|'(k0);;|`(k1,Regexp,K);;|`(k2,K,Regexp);;RegexpString->Boolean(define(acceptsrs)(matcherr(string->lists)'(k0)));;Regexp(ListofChar)K->Bool(define(matcherrcsk)(matchr['zero#f]['one(apply-kkcs)][`(char,c)(matchcs['()#f][(consdcs)(and(char=?cd)(apply-kkcs))])][`(plus,r1,r2)(or(matcherr1csk)(matcherr2csk))][`(times,r1,r2)(matcherr1cs`(k1,r2,k))][`(star,r)(apply-k`(k2,k,r)cs)]));;K(ListofChar)->Bool(define(apply-kkcs)(matchk[`(k0)(empty?cs)][`(k1,r2,k)(matcherr2csk)][`(k2,k*,r)(or(apply-kk*cs)(matcherrcsk))]))And we get the same results:Examples>(accepts`(star(char#\a))"aaaaa")#t>(accepts`(star(char#\a))"aaaab")#f>(accepts`(star(plus(char#\a)(char#\b)))"aaaab")#t17.5Compiling LootCompiling aλ-expression will involve generating two
+different chunks of instructions:one to implement the function, i.e. the code to be executed when
+the function created by theλ-expression is called, andone to create a closure, i.e. to capture the environment at the
+point theλ-expression is evaluated.17.6Compiling Function DefinitionsThe first part closely follows the appoach of defining a function
+definition(define(fx...)e)from our previous compilers.Ther are two important differences from the past though:λ-expressions don’t have a name, andthe body of theλ-expression may reference variables
+bound outside of theλ-expression.To deal with the first issue, we first make a pass over the program
+inserting computed names for eachλ-expression.This is the reason for the generated name field in theLamconstructor.;type Expr =;....;| (Lam Id [Listof Id] Expr)These labels are inserted by the parser.   Here it is at work:Examples>(parse-e'(λ(t)((λ(f)(t(λ(z)((ff)z))))(λ(f)(t(λ(z)((ff)z)))))))'#s(Lamlambda6780(t)#s(App#s(Lamlambda6781(f)#s(App#s(Var t)(#s(Lamlambda6782(z)#s(App#s(App #s(Var f) (#s(Var f)))(#s(Var z)))))))(#s(Lamlambda6783(f)#s(App#s(Var t)(#s(Lamlambda6784(z)#s(App#s(App #s(Var f) (#s(Var f)))(#s(Var z))))))))))Now turning to the second issue–λ-expression may reference
+variables bound outside of the expression—let’s consider how to
+compile something like(λ(x)z)?There are many possible solutions, but here is one.  Every function
+can be passed an implicit first argument which will point to a section
+of memory that contains all of the values for the free variables.In other words, the code for functions will accept an additional
+argument that plays the role of the environment for this particular
+instance of the function.The first thing the function does once called is copies these values
+from memory to the stack and then executes the body of the function in
+an environment that binds both the free variables and the formal
+parameters.This will have to work in concert with closure creation and function
+calls.  When theλ-expression is evaluated, a closure will be
+created storing the value ofzin memory.  When the function
+is applied, the caller will need to retrieve that value and place it
+as the first argument on stack before calling the function’s code.To implement this, we will need to compute the free variables, which
+we do with the following function:loot/fv.rkt#langracket(require"ast.rkt")(providefv);;Expr->[ListofId];;Listallofthefreevariablesine(define(fve)(remove-duplicates(fv*e)))(define(fv*e)(matche[(Varx)(listx)][(Prim1pe)(fv*e)][(Prim2pe1e2)(append(fv*e1)(fv*e2))][(Prim3pe1e2e3)(append(fv*e1)(fv*e2)(fv*e3))][(Ife1e2e3)(append(fv*e1)(fv*e2)(fv*e3))][(Begine1e2)(append(fv*e1)(fv*e2))][(Letxe1e2)(append(fv*e1)(remq*(listx)(fv*e2)))][(Appe1es)(append(fv*e1)(append-mapfv*es))][(Lamfxse)(remq*xs(fv*e))][(Matchepses)(append(fv*e)(append-mapfv-clause*pses))][_'()]));;PatExpr->[ListofId](define(fv-clause*pe)(remq*(bv-pat*p)(fv*e)));;Pat->[ListofId](define(bv-pat*p)(matchp[(PVarx)(listx)][(PConsp1p2)(append(bv-pat*p1)(bv-pat*p2))][(PAndp1p2)(append(bv-pat*p1)(bv-pat*p2))][(PBoxp)(bv-pat*p)][_'()]))We can now write the function that compiles a labelledλ-expression into a function in assembly:;Lam -> Asm(define(compile-lambda-definel)(let((fvs(fvl)))(matchl[(Lamfxse)(let((env(append(reversefvs)(reversexs)(list#f))))(seq(Label(symbol->labelf))(Movrax(Offsetrsp(*8(lengthxs))))(Xorraxtype-proc)(copy-env-to-stackfvs8)(compile-eeenv#t)(Addrsp(*8(lengthenv)));pop env(Ret)))])))Notice how similar it is to our previous function definition compiler:;Defn -> Asm(define(compile-defined)(matchd[(Defnfxse)(seq(Label(symbol->labelf))(compile-ee(reversexs)#t)(Addrsp(*8(lengthxs)));pop args(Ret))]))The key difference here is that we are expecting the caller to leave
+the closure at the top of the stack.  When called, the function
+fetches the closure and copies its environment to the stack, hence the
+body of the function has a static environment which includes the free
+variables followed by the parameters followed by the closure.The copying of the values from the closure environment to the stack is
+achieved by this helper function:;[Listof Id] Int -> Asm;Copy the closure environment at given offset to stack(define(copy-env-to-stackfvsoff)(matchfvs['()(seq)][(cons_fvs)(seq(Movr9(Offsetraxoff))(Pushr9)(copy-env-to-stackfvs(+8off)))]))When the body of the function completes, all of these elements are
+popped off the stack and the function returns.Here’s what’s emitted for aλ-expression with a free variable:Examples>(compile-lambda-define(Lam'f'(x)(Var'z)))(list(Label 'label_f_5e96933745)(Mov 'rax (Offset 'rsp 8))(Xor 'rax 5)(Mov 'r9 (Offset 'rax 8))(Push 'r9)(Mov 'rax (Offset 'rsp 0))(Add 'rsp 24)(Ret))The compiler will need to generate one such function for eachλ-expression in the program.  So we use a helper function for
+extracting all theλ-expressions:loot/lambdas.rkt#langracket(require"ast.rkt")(providelambdas);;Prog->[ListofLam];;Listallofthelambdaexpressionsinp(define(lambdasp)(matchp[(Progdse)(append(lambdas-dsds)(lambdas-ee))]));;Defns->[ListofLam];;Listallofthelambdaexpressionsinds(define(lambdas-dsds)(matchds['()'()][(cons(Defnfxse)ds)(append(lambdas-ee)(lambdas-dsds))]));;Expr->[ListofLam];;Listallofthelambdaexpressionsine(define(lambdas-ee)(matche[(Prim1pe)(lambdas-ee)][(Prim2pe1e2)(append(lambdas-ee1)(lambdas-ee2))][(Prim3pe1e2e3)(append(lambdas-ee1)(lambdas-ee2)(lambdas-ee3))][(Ife1e2e3)(append(lambdas-ee1)(lambdas-ee2)(lambdas-ee3))][(Begine1e2)(append(lambdas-ee1)(lambdas-ee2))][(Letxe1e2)(append(lambdas-ee1)(lambdas-ee2))][(Appe1es)(append(lambdas-ee1)(append-maplambdas-ees))][(Lamfxse1)(conse(lambdas-ee1))][(Matchepses)(append(lambdas-ee)(append-maplambdas-ees))][_'()]))And another for compiling each of them:;[Listof Lam] -> Asm(define(compile-lambda-definesls)(matchls['()(seq)][(conslls)(seq(compile-lambda-definel)(compile-lambda-definesls))]))The top-levelcompilefunction now extracts and compiles all
+theλ-expressions to functions:;Prog -> Asm(define(compilep)(matchp[(Progdse)(prog(externs)(Global'entry)(Label'entry)(Movrbxrdi);recv heap pointer(compile-ee'()#t)(Ret)(compile-lambda-defines(lambdase))(Label'raise_error_align)pad-stack(Call'raise_error))]))What remains is the issue of compilingλ-expressions to code
+to create a closure and using closures to provide the appropriate
+environment when called.17.7Save the Environment: Create a Closure!The basic challenge we are faced with is designing a representation of
+functions as values.  Like other kinds of values, functions will be
+disjoint kind of value, meaning bits representing a function will need
+to be tagged distinctly from other kinds of values.  Functions will
+need to represent all of the run-time information in theClosurestructure used in the interpreter.  Looking back, aClosurecontains the formal parameters of thelambda-expression, the body, and the environment in place at
+the time thelambda-expression was evaluated.The parameters and body expression are relevantcompile-lambda-define.  What’s relevant for the closure is
+the label oflambda-expression and the environment.  For the
+compiler, the environment can be represented by the sequence of values
+it contains at run-time.So, the way we will represent a closure is by a tagged pointer to a
+sequence in memory that contains the label of the closure’s code and a
+sequence of values that were bound to the free variables when thelambda-expression was evaluated.When alambda-expression is evaluated, we allocate a closure
+on the heap, write thelambda’s label, followed by the values
+of the free variables.  The result of evaluating the expression is the
+tagged pointer to the memory just written.Here’s the function for emitting closure construction code:;Id [Listof Id] Expr CEnv -> Asm(define(compile-lamfxsec)(let((fvs(fv(Lamfxse))))(seq(Learax(symbol->labelf))(Mov(Offsetrbx0)rax)(free-vars-to-heapfvsc8)(Movraxrbx);return value(Orraxtype-proc)(Addrbx(*8(add1(lengthfvs)))))))It relies on a helper function for emitting instructions to copy the
+value of free variables, i.e. variables bound in the current
+environment but outside of thelambda-expression.  It fetches
+these values just like a variable reference would: it computes the
+variables lexical address and fetches it from the stack, then writes
+it to the heap.;[Listof Id] CEnv Int -> Asm;Copy the values of given free variables into the heap at given offset(define(free-vars-to-heapfvscoff)(matchfvs['()(seq)][(consxfvs)(seq(Movr8(Offsetrsp(lookupxc)))(Mov(Offsetrbxoff)r8)(free-vars-to-heapfvsc(+off8)))]))That’s all there is to closure construction!17.8Calling FunctionsThe last peice of the puzzle is making function calls and closures
+work together.  Remember that aλ-expression is compiled into
+a function that expects a closureplusits arguments on the
+stack.So the code generated for a function call needs to manage running each
+subexpression, the first of which should evaluate to a function (i.e.
+a pointer to a label and environment in memory) and then fetching the
+function’s label and jumping to it.Here is the code for the non-tail-calls:;Expr [Listof Expr] CEnv -> Asm;The return address is placed above the arguments, so callee pops;arguments and return address is next frame(define(compile-app-nontaileesc)(let((r(gensym'ret))(i(*8(lengthes))))(seq(Learaxr)(Pushrax)(compile-es(consees)(cons#fc))(Movrax(Offsetrspi))(assert-procrax)(Xorraxtype-proc)(Movrax(Offsetrax0));fetch the code label(Jmprax)(Labelr))))Compared to the previous version of this code, it additionally
+executes the code fore.  After all the subexpression are
+evaluated, it fetches the value ofeoff the stack, checks
+that it is a function, then fetches the label for the function’s code
+and jumps to it.  Notice how the stack naturally has the function as
+the top-most element.  This is used by the code for the function to
+fetch the values stored in the closure.The code for tail calls is similar, but adapted to avoid pushing a
+return frame and to pop the local environment before jumping:;Expr [Listof Expr] CEnv -> Asm(define(compile-app-taileesc)(seq(compile-es(consees)c)(move-args(add1(lengthes))(lengthc))(Addrsp(*8(lengthc)))(Movrax(Offsetrsp(*8(lengthes))))(assert-procrax)(Xorraxtype-proc)(Movrax(Offsetrax0))(Jmprax)))We’ve now implemented all there is to first-class functions.  It’s
+possible to write recursive functions using the Y-combinator, although
+that’s no so convenient.  Next we can tackle the issue of recursive or
+even sets of mutually recursive functions by dealing with top-level
+function definitions.17.9Recursive FunctionsWriting recursive programs with the Y-combinator is a bit
+inconvenient.We previously had the ability to write recursive or even mutually
+recursive function definitions by defining them at the top-level withdefine, although that was before functions were considered
+first-class values.What changes now?Well, one view is that(define(fx)(add1x))is really just
+defining a function and giving it a name.  In other words, it’s really
+just saying(definef(lambda(x)(add1x))).  We already
+know how to compilelambda-expressions and we all ready know
+how to bind variable names to values, so it would seem this is not so
+difficult to accomodate.A program consisting of a series of function definitions followed by
+an expression can first compile all the function definitions, then
+create a series of closures, push them on the stack, then execute the
+main expression in an environment that includes the names of the
+defined functions.That will work just fine for an example like(define(fx)(add1x))(f5).Where it breaks down is in a program like this:(define(fn)(if(zero?n)1(+n(f(sub1n)))))(f10)Why?  Because the (implicit)lambda-expression here has a
+free variablef.  In the closure representation, what should
+the value of this variable be?  It should be the functionfitself.  In other words, it should be a tagged pointer to the closure,
+meaning that the closure representation of a recursive function is a
+cyclic data structure!But how can we create such a structure?  In creating the closure
+representation of the functionfwe would need to write the
+pointer to the value we are constructingas we construct it.To make matters worse, consider a set of mutually recursive functions
+like this:(define(even?x)(if(zero?x)#t(odd?(sub1x))))(define(odd?x)(if(zero?x)#f(even?(sub1x))))(even?101)Botheven?andodd?contain a free variable: foreven?it’sodd?and forodd?it’seven?.  Hence the closure representation ofeven?should be two words long; the first words will be the address of the
+label that containseven?’s code and the second word will be
+the tagged pointer to theodd?closure.  Likewise, the
+closure representation ofodd?will be two words long,
+containing the address of the label forodd?followed by the
+tagged pointer to theeven?closure.How can we possible construct these two closures that must each point
+to the other?The solution here is to recognize that the closures can be constructed
+in a staged way.  We can lay out the memory for each closure but delay
+writing the value of the free variables.  This is possible because all
+we need to know in order to allocate the memory for a closure is the
+number of free variables that occur in the syntax of thelambda-expression.  Once we have addresses for each closure
+we are constructing, we canthengo back and initialize each
+closure writing the value of its free variables.  Doing this staged
+initialization is safe because we know that none of these functions
+can be called before the initialization is complete.  (Try to convince
+yourself of this by considering the grammar of programs.)Using that idea, we can compile the functions defined at the top-level
+in a slightly different way fromlambda-expressions.  We will
+first allocate memory for all of the closures and push tagged pointers
+for each of them on the stack, effectively binding the defined
+function names to their (unitialized) closures.  We then copy free
+variable values to memory, initializing the closures.  Doing it in
+this way allows functions to refer back to themselves or other
+top-level function definitions.First, the easy stuff: the code of a top-level function definition is
+compiled just like alambda-expression:;Defn -> Asm(define(compile-defined)(matchd[(Defnfxse)(compile-lambda-define(Lamfxse))]))We extend this to lists of function definitions in the obvious way:;[Listof Defn] -> Asm(define(compile-definesds)(matchds['()(seq)][(consdds)(seq(compile-defined)(compile-definesds))]))And in compiling a program(Progdse)we make sure to emit(compile-definesds).Now we have to turn to creating all of the closures fords.
+To accomplish this, we write a function(compile-defines-valuesds)that will create a closure for
+each function definition and push it on the stack.The top-level expressionewill no longer be compiled in the
+empty environment, but instead in an environment that includes all of
+the names defined as functions.  So to compile(Progdse)we(compile-ee(reverse(define-idsds))#t), wheredefine-idsis a simple function for fetching the list of
+function names defined byds(the list of names is reversed
+because the functions are pushed on in the order they appear, hence
+the last function is the most recently pushed).Here is the definition ofcompile-defines-values:;Defns -> Asm;Compile the closures for ds and push them on the stack(define(compile-defines-valuesds)(seq(alloc-definesds0)(init-definesds(reverse(define-idsds))8)(add-rbx-definesds0)))It does the staged allocation and initialization of the closures as
+described earlier.  Once the closures are allocated and initialized,
+it bumps'rbxby the total size of all the allocated closures.Thealloc-definesfunction allocates, but leaves
+uninitialized, each of the closures and pushes them on the stack:;Defns Int -> Asm;Allocate closures for ds at given offset, but don't write environment yet(define(alloc-definesdsoff)(matchds['()(seq)][(cons(Defnfxse)ds)(let((fvs(fv(Lamfxse))))(seq(Learax(symbol->labelf))(Mov(Offsetrbxoff)rax)(Movraxrbx)(Addraxoff)(Orraxtype-proc)(Pushrax)(alloc-definesds(+off(*8(add1(lengthfvs)))))))]))Theinit-definesfunction intializes each of the closures
+usingfree-vars-to-heap:;Defns CEnv Int -> Asm;Initialize the environment for each closure for ds at given offset(define(init-definesdscoff)(matchds['()(seq)][(cons(Defnfxse)ds)(let((fvs(fv(Lamfxse))))(seq(free-vars-to-heapfvscoff)(init-definesdsc(+off(*8(add1(lengthfvs)))))))]))Finally, theadd-rbx-definesfunction computes the total size
+of all the closures and adjusts'rbxappropriately:;Defns Int -> Asm;Compute adjustment to rbx for allocation of all ds(define(add-rbx-definesdsn)(matchds['()(seq(Addrbx(*n8)))][(cons(Defnfxse)ds)(add-rbx-definesds(+n(add1(length(fv(Lamfxse))))))]))17.10A Complete CompilerPutting all the pieces together, we have the complete compile for Loot:loot/compile.rkt#langracket(provide(all-defined-out))(require"ast.rkt""types.rkt""lambdas.rkt""fv.rkt""compile-ops.rkt"a86/ast);;Registersused(definerax'rax);return(definerbx'rbx);heap(definersp'rsp);stack(definerdi'rdi);arg;;typeCEnv=[ListofId];;Prog->Asm(define(compilep)(matchp[(Progdse)(prog(externs)(Global'entry)(Label'entry)(Movrbxrdi);recvheappointer(compile-defines-valuesds)(compile-ee(reverse(define-idsds))#t)(Addrsp(*8(lengthds)));;popfunctiondefinitions(Ret)(compile-definesds)(compile-lambda-defines(lambdasp))(Label'raise_error_align)pad-stack(Call'raise_error))]))(define(externs)(seq(Extern'peek_byte)(Extern'read_byte)(Extern'write_byte)(Extern'raise_error)));;[ListofDefn]->[ListofId](define(define-idsds)(matchds['()'()][(cons(Defnfxse)ds)(consf(define-idsds))]));;[ListofDefn]->Asm(define(compile-definesds)(matchds['()(seq)][(consdds)(seq(compile-defined)(compile-definesds))]));;Defn->Asm(define(compile-defined)(matchd[(Defnfxse)(compile-lambda-define(Lamfxse))]));;[ListofLam]->Asm(define(compile-lambda-definesls)(matchls['()(seq)][(conslls)(seq(compile-lambda-definel)(compile-lambda-definesls))]));;Lam->Asm(define(compile-lambda-definel)(let((fvs(fvl)))(matchl[(Lamfxse)(let((env(append(reversefvs)(reversexs)(list#f))))(seq(Label(symbol->labelf))(Movrax(Offsetrsp(*8(lengthxs))))(Xorraxtype-proc)(copy-env-to-stackfvs8)(compile-eeenv#t)(Addrsp(*8(lengthenv)));popenv(Ret)))])));;[ListofId]Int->Asm;;Copytheclosureenvironmentatgivenoffsettostack(define(copy-env-to-stackfvsoff)(matchfvs['()(seq)][(cons_fvs)(seq(Movr9(Offsetraxoff))(Pushr9)(copy-env-to-stackfvs(+8off)))]));;ExprCEnvBool->Asm(define(compile-eect?)(matche[(Inti)(compile-valuei)][(Boolb)(compile-valueb)][(Charc)(compile-valuec)][(Eof)(compile-valueeof)][(Empty)(compile-value'())][(Varx)(compile-variablexc)][(Strs)(compile-strings)][(Prim0p)(compile-prim0pc)][(Prim1pe)(compile-prim1pec)][(Prim2pe1e2)(compile-prim2pe1e2c)][(Prim3pe1e2e3)(compile-prim3pe1e2e3c)][(Ife1e2e3)(compile-ife1e2e3ct?)][(Begine1e2)(compile-begine1e2ct?)][(Letxe1e2)(compile-letxe1e2ct?)][(Appees)(compile-appeesct?)][(Lamfxse)(compile-lamfxsec)][(Matchepses)(compile-matchepsesct?)]));;Value->Asm(define(compile-valuev)(seq(Movrax(imm->bitsv))));;IdCEnv->Asm(define(compile-variablexc)(let((i(lookupxc)))(seq(Movrax(Offsetrspi)))));;String->Asm(define(compile-strings)(let((len(string-lengths)))(if(zero?len)(seq(Movraxtype-str))(seq(Movraxlen)(Mov(Offsetrbx0)rax)(compile-string-chars(string->lists)8)(Movraxrbx)(Orraxtype-str)(Addrbx(+8(*4(if(odd?len)(add1len)len))))))));;[ListofChar]Integer->Asm(define(compile-string-charscsi)(matchcs['()(seq)][(consccs)(seq(Movrax(char->integerc))(Mov(Offsetrbxi)'eax)(compile-string-charscs(+4i)))]));;Op0CEnv->Asm(define(compile-prim0pc)(compile-op0p));;Op1ExprCEnv->Asm(define(compile-prim1pec)(seq(compile-eec#f)(compile-op1p)));;Op2ExprExprCEnv->Asm(define(compile-prim2pe1e2c)(seq(compile-ee1c#f)(Pushrax)(compile-ee2(cons#fc)#f)(compile-op2p)));;Op3ExprExprExprCEnv->Asm(define(compile-prim3pe1e2e3c)(seq(compile-ee1c#f)(Pushrax)(compile-ee2(cons#fc)#f)(Pushrax)(compile-ee3(cons#f(cons#fc))#f)(compile-op3p)));;ExprExprExprCEnvBool->Asm(define(compile-ife1e2e3ct?)(let((l1(gensym'if))(l2(gensym'if)))(seq(compile-ee1c#f)(Cmpraxval-false)(Jel1)(compile-ee2ct?)(Jmpl2)(Labell1)(compile-ee3ct?)(Labell2))));;ExprExprCEnvBool->Asm(define(compile-begine1e2ct?)(seq(compile-ee1c#f)(compile-ee2ct?)));;IdExprExprCEnvBool->Asm(define(compile-letxe1e2ct?)(seq(compile-ee1c#f)(Pushrax)(compile-ee2(consxc)t?)(Addrsp8)));;Id[ListofExpr]CEnvBool->Asm(define(compile-appfesct?);(compile-app-nontailfesc)(ift?(compile-app-tailfesc)(compile-app-nontailfesc)));;Expr[ListofExpr]CEnv->Asm(define(compile-app-taileesc)(seq(compile-es(consees)c)(move-args(add1(lengthes))(lengthc))(Addrsp(*8(lengthc)))(Movrax(Offsetrsp(*8(lengthes))))(assert-procrax)(Xorraxtype-proc)(Movrax(Offsetrax0))(Jmprax)));;IntegerInteger->Asm(define(move-argsioff)(cond[(zero?off)(seq)][(zero?i)(seq)][else(seq(Movr8(Offsetrsp(*8(sub1i))))(Mov(Offsetrsp(*8(+off(sub1i))))r8)(move-args(sub1i)off))]));;Expr[ListofExpr]CEnv->Asm;;Thereturnaddressisplacedabovethearguments,socalleepops;;argumentsandreturnaddressisnextframe(define(compile-app-nontaileesc)(let((r(gensym'ret))(i(*8(lengthes))))(seq(Learaxr)(Pushrax)(compile-es(consees)(cons#fc))(Movrax(Offsetrspi))(assert-procrax)(Xorraxtype-proc)(Movrax(Offsetrax0));fetchthecodelabel(Jmprax)(Labelr))));;Defns->Asm;;Compiletheclosuresfordsandpushthemonthestack(define(compile-defines-valuesds)(seq(alloc-definesds0)(init-definesds(reverse(define-idsds))8)(add-rbx-definesds0)));;DefnsInt->Asm;;Allocateclosuresfordsatgivenoffset,butdon'twriteenvironmentyet(define(alloc-definesdsoff)(matchds['()(seq)][(cons(Defnfxse)ds)(let((fvs(fv(Lamfxse))))(seq(Learax(symbol->labelf))(Mov(Offsetrbxoff)rax)(Movraxrbx)(Addraxoff)(Orraxtype-proc)(Pushrax)(alloc-definesds(+off(*8(add1(lengthfvs)))))))]));;DefnsCEnvInt->Asm;;Initializetheenvironmentforeachclosurefordsatgivenoffset(define(init-definesdscoff)(matchds['()(seq)][(cons(Defnfxse)ds)(let((fvs(fv(Lamfxse))))(seq(free-vars-to-heapfvscoff)(init-definesdsc(+off(*8(add1(lengthfvs)))))))]));;DefnsInt->Asm;;Computeadjustmenttorbxforallocationofallds(define(add-rbx-definesdsn)(matchds['()(seq(Addrbx(*n8)))][(cons(Defnfxse)ds)(add-rbx-definesds(+n(add1(length(fv(Lamfxse))))))]));;Id[ListofId]ExprCEnv->Asm(define(compile-lamfxsec)(let((fvs(fv(Lamfxse))))(seq(Learax(symbol->labelf))(Mov(Offsetrbx0)rax)(free-vars-to-heapfvsc8)(Movraxrbx);returnvalue(Orraxtype-proc)(Addrbx(*8(add1(lengthfvs)))))));;[ListofId]CEnvInt->Asm;;Copythevaluesofgivenfreevariablesintotheheapatgivenoffset(define(free-vars-to-heapfvscoff)(matchfvs['()(seq)][(consxfvs)(seq(Movr8(Offsetrsp(lookupxc)))(Mov(Offsetrbxoff)r8)(free-vars-to-heapfvsc(+off8)))]));;[ListofExpr]CEnv->Asm(define(compile-esesc)(matches['()'()][(consees)(seq(compile-eec#f)(Pushrax)(compile-eses(cons#fc)))]));;Expr[ListofPat][ListofExpr]CEnvBool->Asm(define(compile-matchepsesct?)(let((done(gensym)))(seq(compile-eec#f)(Pushrax);saveawaytoberestoredbyeachclause(compile-match-clausespses(cons#fc)donet?)(Jmp'raise_error_align)(Labeldone)(Addrsp8))));popthesavedvaluebeingmatched;;[ListofPat][ListofExpr]CEnvSymbolBool->Asm(define(compile-match-clausespsescdonet?)(match*(pses)[('()'())(seq)][((conspps)(consees))(seq(compile-match-clausepecdonet?)(compile-match-clausespsescdonet?))]));;PatExprCEnvSymbolBool->Asm(define(compile-match-clausepecdonet?)(let((next(gensym)))(match(compile-patternp'()next)[(listifcm)(seq(Movrax(Offsetrsp0));restorevaluebeingmatchedi(compile-ee(appendcmc)t?)(Addrsp(*8(lengthcm)))(Jmpdone)f(Labelnext))])));;PatCEnvSymbol->(listAsmAsmCEnv)(define(compile-patternpcmnext)(matchp[(PWild)(list(seq)(seq)cm)][(PVarx)(list(seq(Pushrax))(seq)(consxcm))][(PLitl)(let((fail(gensym)))(list(seq(Cmprax(imm->bitsl))(Jnefail))(seq(Labelfail)(Addrsp(*8(lengthcm)))(Jmpnext))cm))][(PAndp1p2)(match(compile-patternp1(cons#fcm)next)[(listi1f1cm1)(match(compile-patternp2cm1next)[(listi2f2cm2)(list(seq(Pushrax)i1(Movrax(Offsetrsp(*8(-(sub1(lengthcm1))(lengthcm)))))i2)(seqf1f2)cm2)])])][(PBoxp)(match(compile-patternpcmnext)[(listi1f1cm1)(let((fail(gensym)))(list(seq(Movr8rax)(Andr8ptr-mask)(Cmpr8type-box)(Jnefail)(Xorraxtype-box)(Movrax(Offsetrax0))i1)(seqf1(Labelfail)(Addrsp(*8(lengthcm)));haven'tpushedanythingyet(Jmpnext))cm1))])][(PConsp1p2)(match(compile-patternp1(cons#fcm)next)[(listi1f1cm1)(match(compile-patternp2cm1next)[(listi2f2cm2)(let((fail(gensym)))(list(seq(Movr8rax)(Andr8ptr-mask)(Cmpr8type-cons)(Jnefail)(Xorraxtype-cons)(Movr8(Offsetrax0))(Pushr8);pushcdr(Movrax(Offsetrax8));movraxcari1(Movrax(Offsetrsp(*8(-(sub1(lengthcm1))(lengthcm)))))i2)(seqf1f2(Labelfail)(Addrsp(*8(lengthcm)));haven'tpushedanythingyet(Jmpnext))cm2))])])]));;IdCEnv->Integer(define(lookupxcenv)(matchcenv['()(error"undefinedvariable:"x)][(consyrest)(match(eq?xy)[#t0][#f(+8(lookupxrest))])]));;Symbol->Label;;ProduceasymbolthatisavalidNasmlabel(define(symbol->labels)(string->symbol(string-append"label_"(list->string(map(λ(c)(if(or(char<=?#\ac#\z)(char<=?#\Ac#\Z)(char<=?#\0c#\9)(memqc'(#\_#\$#\##\@#\~#\.#\?)))c#\_))(string->list(symbol->strings))))"_"(number->string(eq-hash-codes)16))))contents← prevupnext →
+4 Abscond: a language of numbers►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►4Abscond:a language of numbers4.1Overview4.2Concrete syntax for Abscond4.3Abstract syntax for Abscond4.4Meaning of Abscond programs4.5Toward a Compiler for Abscond4.6An Example4.7A Compiler for Abscond4.8But is itCorrect?On this page:4.1Overview4.2Concrete syntax for Abscond4.3Abstract syntax for Abscond4.4Meaning of Abscond programs4.5Toward a Compiler for Abscond4.6An Example4.7A Compiler for Abscond4.8But is itCorrect?8.3contents← prevupnext →4Abscond: a language of numbersLet’s Make a Programming Language!4.1Overview4.2Concrete syntax for Abscond4.3Abstract syntax for Abscond4.4Meaning of Abscond programs4.5Toward a Compiler for Abscond4.6An Example4.7A Compiler for Abscond4.8But is itCorrect?4.1OverviewA compiler is just one (optional!) component of aprogramming
+language.  So if you want to make a compiler, you must first settle
+on a programming language to compile.The specification of a programming language consists of two parts: the
+syntax, which specifies theformof programs, and semantics,
+which specifies themeaningof programs.Syntax, while important, is a fairly superficial aspect of
+programming languages. The real heart of a programming
+language is its semantics and we will spend more time
+concerned this aspect.There are a few common ways a language’s meaning is specified:By example.By informal description.By reference to an implementation, often an interpreter.By formal (mathematical) definition.Each approach has its advantages and disadvantages.  Examples are
+concise and unambiguous, but incomplete.  Informal (prose)
+descriptions can be intuitive, but open to interpretation and
+ambiguity.  Reference implementations provide precise, executable
+specifications, but may over specify language details by tying them to
+implementation artifacts.  Formal definitions balance precision while
+allowing for under-specification, but require detailed definitions and
+training to understand.We will use a combination of each.To begin, let’s start with a dead simple programming language calledAbscond.  The only kind of expression in Abscond are integer
+literals.  Running an abscond program just produces that integer.
+(Told you it was simple.)4.2Concrete syntax for AbscondWe will simplify matters of syntax by using the Lisp
+notation of s-expression for theconcreteform of
+program phrases. The job of aparseris to construct
+an abstract syntax tree from the textual representation of a
+program. We will consider parsing in two phases:the first converts a stream of textual input into an
+s-expression, andthe second converts an s-expression into an instance
+of a datatype for representing expressions called anAST.For the first phase, we rely on thereadfunction
+to take care of converting strings to s-expressions. In
+order to parse s-expressions into ASTs, we will write fairly
+straightforward functions that convert between the
+representations.Abscond, like the other languages studied in this course, is
+designed to be a subset of Racket. This has two primary benefits:the Racket interpreter and compiler can be used as a reference implementation of the languages we build, andthere are built-in facilities for reading and writing
+data in the parenthezised form that Racket uses, which we can borrow to make parsing easy.The concrete form of an Abscond program will consist of, like Racket, the line of text:#lang racketfollowed by a (concrete) expression.  The grammar of expressions is
+very simple:So,0,120,-42, etc. are
+concrete Abscond expressions and a complete Abscond program
+looks like this:abscond/42.rkt#langracket42Reading Abscond programs from ports, files, strings,
+etc. consists of reading (and ignoring) the#lang racketline and then using thereadfunction to
+parse the concrete expression as an s-expression.4.3Abstract syntax for AbscondWhile not terribly useful for a language as overly simplistic as Abscond, we use
+an AST datatype for representing expressions and another syntactic categories.
+For each category, we will have an appropriate constructor.  In the case of Abscond
+all expressions are integers, so we have a single constructor,Int.A datatype for representing expressions can be defined as:abscond/ast.rkt#langracket(provideInt);;typeExpr=(IntInteger)(structInt(i)#:prefab)The parser for Abscond checks that a given s-expression is
+an integer and constructs an instance of the AST datatype if
+it is, otherwise it signals an error:abscond/parse.rkt#langracket(provideparse)(require"ast.rkt");;S-Expr->Expr(define(parses)(matchs[(?integer?)(Ints)][_(error"Parseerror")]))4.4Meaning of Abscond programsThe meaning of an Abscond program is simply the number itself.  So(Int42)evaluates to42.We can write an “interpreter” that consumes an expression and
+produces it’s meaning:abscond/interp.rkt#langracket(provideinterp)(require"ast.rkt");;Expr->Integer;;Interpretgivenexpression(define(interpe)(matche[(Inti)i]))Examples:>(interp(Int42))42>(interp(Int-8))-8We can add a command line wrapper program for interpreting Abscond
+programs saved in files:abscond/interp-file.rkt#langracket(providemain)(require"parse.rkt""interp.rkt");;String->Void;;Parseandinterpretcontentsofgivenfilename,;;printresultonstdout(define(mainfn)(let([p(open-input-filefn)])(begin(read-linep);ignore#langracketline(println(interp(parse(readp))))(close-input-portp))))The details here aren’t important (and you won’t be asked to write
+this kind of code), but this programreads the contents of a
+file given on the command line.  If it’s an integer, i.e. a
+well-formed Abscond program, then it runs the intepreter and displays
+the result.For example, interpreting the program42.rktshown above:shell>racket -t interp-file.rkt -m 42.rkt42Even though the semantics is obvious, we can provide a formal
+definition of Abscond usingoperational semantics.An operational semantics is a mathematical definition that
+characterizes the meaning of programs.  We will defined the semantics
+of Abscond as abinary relationbetween programs and their
+meanings.  So in the setting of Abscond, this binary relation will be
+a set of pairs of expressions and integers.  This relation will be
+defined inductively usinginference rules.  For such a simple
+language, just a single inference rule suffices:Here, we are defining a binary relation, called, and saying every integer literal
+expression is paired with the integer itself in the
+relation. So((Int2),2)is in,((Int5),5)is in, and so on.The inference rules define the binary relation by defining theevidencefor being in the relation.  The rule makes use ofmeta-variablesdrawn from the non-terminals of the language
+grammar.  A pair is in the relation if you can construct an instance
+of the rule (substituting some integer fori) in the rule.(This part probably seems opaque at the moment, but it will become
+clearer as we work through more examples, so don’t worry.)The operational semanticsdefinesthe meaning of Abscond
+programs.  The intepretercomputesthat meaning.  We can view
+the semantics as a specification, and the interpreter as an
+implementation.Characterizing the correctness of the interpreter boils down to the
+following statement:Interpreter Correctness:For all expressionseand integersi, if (e,i) in, then(interpe)equalsi.We now have a complete (if overly simple) programming language with an
+operational semantics and an interpreter, which is (obviously)
+correct.  Now let’s write a compiler.4.5Toward a Compiler for AbscondA compiler, like an interpreter, is an implementation of a programming
+language.  The key difference is that a compiler stages the work of
+interpreting a program into two phases.  The first translates the
+original program (the source language) into a program in another
+programming language (the target language).  The second runs this
+program.  These phases, often calledcompile-timeandrun-time.  The program that does the translation is thecompiler.  The program that does the running of the translated
+program is therun-time system.So in general, the relationship between an interpreter and compiler is(source-interp e) = (target-interp (source-compile e))We can in principle choose any target language we’d like.  For this
+class, we will choose thex86-64instruction set architecture.There are several reasons for this choice:it is a low-level language, so compiling from a high-level
+language to x86-64 will require building everything from scratch,it is the programming language at the “bottom” of your
+computer; it’s interpreter is implemented in hardware on your
+computer’s CPU,it is one of the two dominant computing architectures (the other
+being ARM), andit is a mature technology with good tools and materials.So our compiler will emit x86 assembly code.  To make our lives a bit
+easier, we will write the run-time system in C.  Let’s start with the
+Abscond runtime:abscond/main.c#include<stdio.h>#include<inttypes.h>#include"print.h"int64_tentry();intmain(intargc,char** argv){int64_tresult;result = entry();print_result(result);putchar('\n');return0;}This C program provides the main entry point for running an Abscond
+program.  It relies upon a functionprint_resultwhich is defined
+as follows:abscond/print.h#ifndef PRINT_H#define PRINT_Hvoidprint_result(int64_t);#endifabscond/print.c#include<stdio.h>#include<inttypes.h>voidprint_result(int64_tx){printf("%"PRId64, x);}Separating outprint_result, which at this point is just a simpleprintfstatement, seems like overkill, but it will be useful in
+the future as the language gets more complicated.The runtime must be linked against an object file that provides the
+definition ofentry; this is the code our compiler will emit.Theentryfunction computes the result of running the
+Abscond code, i.e. an integer.  Here we are taking advantage of the
+x86-64 architecture by using 64-bit signed integers by using theint64_tC type.The runtime system calls the function and prints the result.We can compile the run-time system to get an object file.  We’ll usegccfor compiling C:shell>gcc -m64 -c -o main.o main.cshell>gcc -m64 -c -o print.o print.cThis createsmain.oandprint.o; linking these file together
+with an object file that containsentrywill produce an
+executable that, when run, will carry out the execution of an Abscond
+program.4.6An ExampleBefore trying to write the Abscond compiler, let’s first make an
+example of what we would like the compiler to produce for a particular
+example.  Let’s say the Abscond program is42.  What should
+the assembly code for this program look like?  Here we have to learn a
+bit about the x86-64 assembly language.abscond/42.sglobalentrydefault relsection.textglobalentryentry:movrax,42retNote: on macOS, labels must be prepended with_,
+while on Linux they are not; e.g._entryvsentry.Above is a x86-64 program, written in NASM syntax.  We will be usingnasmas our assembler in this class because it is widely used and
+available on most platforms.The first line declares a global label (entry), an
+entry point in to the code below.The next line declares the start of a section of code consisting
+of textual instructions.The third line contains theentrylabel, i.e. the start of
+theentrycode.  When the run-time systems callsentry, it
+will jump to this point in the code.The fourth line is an instruction to move the integer literal 42
+into theraxregister.  By convention, whatever is in theraxregister when code returns control to the caller will hold
+the return value.The final line is an instruction to return control to the
+caller.To assemble this program into an object file, we can run thenasmassembler:shell>nasm -f elf64 -o 42.o 42.sNote: on macOS, the format option-fshould bemacho64; on Linux it should beelf64.This creates42.o, an object file containing the instructions
+above (in binary format).We can link this file with the run-time to produce an executable file:shell>gcc main.o print.o 42.o -o 42.runThis creates the file42.run, an exectuable program:shell>./42.run42We now have a working example.  The remaining work will be to design a
+compiler that takes an Abscond program and emits a file like42.s, but with the appropriate integer literal.4.7A Compiler for AbscondWe will now write a compiler for Abscond.  To heart of the compiler
+will be a function with the following signature:;Expr -> Asm(define(compilee)...)WhereAsmis a data type for representing assembly programs,
+i.e. it will be the AST of x86-64 assembly.So the AST representation of our example is:(list(Label'entry)(Mov'rax42)(Ret))Writing thecompilefunction is easy:abscond/compile.rkt#langracket(providecompile)(require"ast.rkt"a86/ast);;Expr->Asm(define(compilee)(prog(Global'entry)(Label'entry)(compile-ee)(Ret)));;Expr->Asm(define(compile-ee)(matche[(Inti)(seq(Mov'raxi))]))Examples:>(compile(Int42))(list(Global 'entry)(Label 'entry)(Mov 'rax 42)(Ret))>(compile(Int38))(list(Global 'entry)(Label 'entry)(Mov 'rax 38)(Ret))To convert back to the concrete NASM syntax, we useasm-display.Note: the printer takes care of the macOS vs Linux label
+convention by detecting the underlying system and printing
+appropriately.Example:>(asm-display(compile(Int42)))global entrydefault relsection .textglobal entryentry:mov rax, 42retPutting it all together, we can write a command line compiler much
+like the command line interpreter before, except now we emit assembly
+code:abscond/compile-file.rkt#langracket(providemain)(require"parse.rkt""compile.rkt"a86/printer);;String->Void;;Compilecontentsofgivenfilename,;;emitasmcodeonstdout(define(mainfn)(let((p(open-input-filefn)))(begin(read-linep);ignore#langracketline(asm-display(compile(parse(readp))))(close-input-portp))))Example:shell>racket -t compile-file.rkt -m 42.rktglobalentrydefaultrelsection.textglobalentryentry:movrax, 42retUsing a Makefile, we can capture the whole compilation dependencies as:Note: the appropriate object file format is detected
+based on the operating system.abscond/MakefileUNAME:=$(shelluname).PHONY:testifeq($(UNAME), Darwin)format=macho64elseformat=elf64endifobjs=\main.o\print.odefault:runtime.oruntime.o:$(objs)ld -r$(objs)-o runtime.o%.run:%.o runtime.ogcc runtime.o$<-o$@.c.o:gcc -fPIC -c -g -o$@$<.s.o:nasm -g -f$(format)-o$@$<%.s:%.rktracket -t compile-file.rkt -m$<>$@clean:rm *.o *.s *.runtest:example.run@test"$(shell./example.run)"="$(shellracket example.rkt)"And now compiling Abscond programs is easy-peasy:shell>make 42.runmake[1]: Entering directory '/home/runner/work/www/www/langs/abscond'ld-r main.o print.o -o runtime.ogccruntime.o 42.o -o 42.runmake[1]: Leaving directory '/home/runner/work/www/www/langs/abscond'>./42.run42It’s worth taking stock of what we have at this point, compared to the
+interpreter approach.  To run the interpreter requires all of Racket
+in the run-time system.When running a program using the interpreter, we have to parse the
+Abscond program, check the syntax of the program (making sure it’s an
+integer), then run the interpreter and print the result.When running a program using the compiler, we still have to parse the
+Abscond program and check its syntax, but this work happensat
+compile-time.  When werunthe program this work will have
+already been done.  While the compiler needs Racket to run, at
+run-time, Racket does not need to be available.  All the run-time
+needs is our (very tiny) object file compiled from C.  Racket doesn’t
+run at all – we could delete it from our computer or ship the
+executable to any compatible x86-64 machine and run it there.  This
+adds up to much more efficient programs.  Just to demonstrate, here’s
+a single data point measuring the difference between interpreting and
+compiling Abscond programs:shell>time -p racket -t interp-file.rkt -m 42.rkt42real0.36user0.31sys0.04Compiling:shell>time -p ./42.run42real0.00user0.00sys0.00Because Abscond is a subset of Racket, we can even compare results
+against interpreting the program directly in Racket:shell>touch 42.rkt# forces interpreter to be used>time -p racket 42.rkt42real0.38user0.31sys0.06Moreover, we can compare our compiled code to code compiled by Racket:shell>raco make 42.rkt>time -p racket 42.rkt42real0.27user0.22sys0.044.8But is itCorrect?At this point, we have a compiler for Abscond.  But is it correct?Here is a statement of compiler correctness:Compiler Correctness:For all expressionseand
+integersi, if (e,i) in, then(asm-interp(compilee))equalsi.Ultimately, we want the compiler to capture the operational semantics
+of our language (the ground truth of what programs mean).  However,
+from a practical stand-point, relating the compiler to the intepreter
+may be more straightforward.  What’s nice about the interpreter is we
+can run it, so we cantestthe compiler against the
+interpreter.  Moreover, since we claimed the interpreter is correct
+(w.r.t. to the semantics), testing the compiler against the interpreter
+is a way of testing it against the semantics, indirectly.  If the
+compiler and interpreter agree on all possible inputs, then the
+compiler is correct with respect to the semantics since it is
+equivalent to the interpreter, and the interpreter is correct.So, in this setting, means we have the following equivaluence:(interp e)equals(asm-interp (compile e))But we don’t actually haveasm-interp, a function that
+interprets the Asm code we generate.  Instead we printed the code and
+hadgccassembly and link it into an executable, which the OS
+could run.  But this is a minor distinction.  We can useasm-interpto interact with the OS to do all of these steps.This is actually a handy tool to have for experimenting with
+compilation within Racket:Examples:>(asm-interp(compile(Int42)))42>(asm-interp(compile(Int37)))37>(asm-interp(compile(Int-8)))-8This of course agrees with what we will get from the interpreter:Examples:>(interp(Int42))42>(interp(Int37))37>(interp(Int-8))-8We can turn this in aproperty-based test, i.e. a function that
+computes a test expressing a single instance of our compiler
+correctness claim:Examples:>(define(check-compilere)(check-eqv?(interpe)(asm-interp(compilee))))>(check-compiler(Int42))>(check-compiler(Int37))>(check-compiler(Int-8))This is a powerful testing technique when combined with random
+generation.  Since our correctness claim should hold forallAbscond programs, we can randomly generateanyAbscond program
+and check that it holds.Examples:>(check-compiler(Int(random100)))>(for([i(in-range10)])(check-compiler(Int(random10000))))The last expression is taking 10 samples from the space of Abscond
+programs in[0,10000)and checking the compiler correctness
+claim on them.  If the claim doesn’t hold for any of these samples, a
+test failure would be reported.Finding an input tocheck-compilerthat fails wouldrefutethe compiler correctness claim and mean that we have a
+bug.  Such an input is called acounter-example.On the other hand we gain more confidence with each passing test.
+While passing tests increase our confidence, we cannot test all
+possible inputs this way, so we can’t be sure our compiler is correct
+by testing alone.  To really be sure, we’d need to write aproof, but that’s beyond the scope of this class.At this point we have not found a counter-example to compiler
+correctness.  It’s tempting to declare victory.  But... can you think
+of a valid input (i.e. some integer) that might refute the correctness
+claim?Think on it.  In the meantime, let’s move on.contents← prevupnext →
+5 Blackmail: incrementing and decrementing►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►5Blackmail:incrementing and decrementing5.1Refinement, take one5.2Concrete syntax for Blackmail5.3Abstract syntax for Blackmail5.4Meaning of Blackmail programs5.5An Example of Blackmail compilation5.6A Compiler for Blackmail5.7Correctness and random testing5.8Looking back, looking forwardOn this page:5.1Refinement, take one5.2Concrete syntax for Blackmail5.3Abstract syntax for Blackmail5.4Meaning of Blackmail programs5.5An Example of Blackmail compilation5.6A Compiler for Blackmail5.7Correctness and random testing5.8Looking back, looking forward8.3contents← prevupnext →5Blackmail: incrementing and decrementingLet’s Do It Again!5.1Refinement, take one5.2Concrete syntax for Blackmail5.3Abstract syntax for Blackmail5.4Meaning of Blackmail programs5.5An Example of Blackmail compilation5.6A Compiler for Blackmail5.7Correctness and random testing5.8Looking back, looking forward5.1Refinement, take oneWe’ve seen all the essential pieces (a grammar, an AST data type
+definition, an operational semantics, an interpreter, a compiler,
+etc.) for implementing a programming language, albeit for an amazingly
+simple language.We will now, through a process ofiterative refinement, grow
+the language to have an interesting set of features.Our second language, which subsumes Abscond, isBlackmail.
+Expressions in Blackmail include integer literals and increment and
+decrement operations.  It’s still a dead simple language, but at least
+programsdosomething.5.2Concrete syntax for BlackmailA Blackmail program consists of#lang racketline and a
+single expression, and the grammar of concrete expressions
+is:So,0,120, and-42are Blackmail expressions,
+but so are(add10),(sub1120),(add1(add1(add1-42))).An example concrete program:blackmail/add1-add1-40.rkt#langracket(add1(add140))5.3Abstract syntax for BlackmailThe grammar of abstract Backmail expressions is:So,(Int0),(Int120), and(Int-42)are Blackmail AST expressions, but so are(Prim1'add1(Int0)),(Sub1(Int120)),(Prim1'add1(Prim1'add1(Prim1'add1(Int-42)))).A datatype for representing expressions can be defined as:blackmail/ast.rkt#langracket(provideIntPrim1);;typeExpr=;;|(IntInteger);;|(Prim1OpExpr);;typeOp='add1|'sub1(structInt(i)#:prefab)(structPrim1(pe)#:prefab)The parser is more involved than Abscond, but still
+straightforward:blackmail/parse.rkt#langracket(provideparse)(require"ast.rkt");;S-Expr->Expr(define(parses)(matchs[(?integer?)(Ints)][(list(?op1?o)e)(Prim1o(parsee))][_(error"Parseerror")]));;Any->Boolean(define(op1?x)(memqx'(add1sub1)))5.4Meaning of Blackmail programsThe meaning of a Blackmail program depends on the form of the expression:the meaning of an integer literal is just the integer itself,the meaning of an increment expression is one more than the meaning of its subexpression, andthe meaning of a decrement expression is one less than the meaning of its subexpression.The operational semantics reflects this dependence on the form of the
+expression by having three rules, one for each kind of expression:The first rule looks familiar; it’s exactly the semantics of integers
+from Abscond.  The second and third rule are more involved.  In
+particular, they havepremisesabove the line.  If the premises
+are true, theconclusionbelow the line is true as well.  These
+rules areconditionalon the premises being true.  This is in
+contrast to the first rule, which applies unconditionally.We can understand these rules as saying the following:For all integersi,((Int i),i)is in.For expressionse0and all integersi0andi1, if(e0,i0)is inandi1= i0+1, then((Prim1'add1e0), i1)is in.For expressionse0and all integersi0andi1, if(e0,i0)is inandi1= i0-1, then((Prim1'sub1e0), i1)is in.These rules areinductive.  We start from the meaning of
+integers and if we have the meaning of an expression, we can construct
+the meaning of a larger expression.This may seem a bit strange at the moment, but it helps to view the
+semantics through its correspondence with an interpreter, which given
+an expressione, computes an integeri, such that(e,i)is in.Just as there are three rules, there will be three cases to the
+interpreter, one for each form of expression:blackmail/interp.rkt#langracket(provideinterp)(require"ast.rkt");;Expr->Integer(define(interpe)(matche[(Inti)i][(Prim1pe)(interp-prim1p(interpe))]));;OpInteger->Integer(define(interp-prim1opi)(matchop['add1(add1i)]['sub1(sub1i)]))Examples:>(interp(Int42))42>(interp(Int-7))-7>(interp(Prim1'add1(Int42)))43>(interp(Prim1'sub1(Int8)))7>(interp(Prim1'add1(Prim1'add1(Prim1'add1(Int8)))))11Here’s how to connect the dots between the semantics and interpreter:
+the interpreter is computing, for a given expressione, the
+integeri, such that(e,i)is in.  The
+interpreter uses pattern matching to determine the form of the
+expression, which determines which rule of the semantics applies.ifeis an integer(Int i), then we’re done: this is the
+right-hand-side of the pair(e,i)in.ifeis an expression(Prim1'add1e0), then we recursively use the interpreter to computei0such that(e0,i0)is in.  But
+now we can compute the right-hand-side by adding 1 toi0.ifeis an expression(Prim1'sub1e0), then we recursively use the interpreter to computei0such that(e0,i0)is in.  But
+now we can compute the right-hand-side by substracting 1 fromi0.This explanation of the correspondence is essentially a proof by
+induction of the interpreter’s correctness:Interpreter Correctness:For all Blackmail expressionseand integersi, if (e,i) in, then(interpe)equalsi.5.5An Example of Blackmail compilationJust as we did with Abscond, let’s approach writing the compiler by
+first writing an example.Suppose we want to compile(add1(add140)).  We already
+know how to compile the40:(Mov'rax40).  To do
+the increment (and decrement) we need to know a bit more x86-64.  In
+particular, theadd(andsub) instruction is relevant.  It
+increments the contents of a register by some given amount.Concretely, the program that adds 1 twice to 40 looks like:blackmail/add1-add1-40.sglobalentrydefault relsection.textglobalentryentry:movrax,40addrax,1addrax,1retThe runtime stays exactly the same as before.shell>make add1-add1-40.runmake[1]: Entering directory '/home/runner/work/www/www/langs/blackmail'gcc-fPIC -c -g -o main.o main.cgcc-fPIC -c -g -o print.o print.cld-r main.o print.o -o runtime.onasm-g -f elf64 -o add1-add1-40.o add1-add1-40.sgccruntime.o add1-add1-40.o -o add1-add1-40.runrmadd1-add1-40.omake[1]: Leaving directory '/home/runner/work/www/www/langs/blackmail'>./add1-add1-40.run425.6A Compiler for BlackmailTo compile Blackmail, we make use of two more a86
+instructions,AddandSub:Examples>(asm-display(list(Label'entry)(Mov'rax40)(Add'rax1)(Add'rax1)(Ret)))global entrydefault relsection .textentry:mov rax, 40add rax, 1add rax, 1retThe compiler consists of two functions: the first, which is given a
+program, emits the entry point and return instructions, invoking
+another function to compile the expression:blackmail/compile.rkt#langracket(provide(all-defined-out))(require"ast.rkt"a86/ast);;Expr->Asm(define(compilee)(prog(Global'entry)(Label'entry)(compile-ee)(Ret)));;Expr->Asm(define(compile-ee)(matche[(Prim1pe)(compile-prim1pe)][(Inti)(compile-integeri)]));;OpExpr->Asm(define(compile-prim1pe)(seq(compile-ee)(matchp['add1(Add'rax1)]['sub1(Sub'rax1)])));;Integer->Asm(define(compile-integeri)(seq(Mov'raxi)))Notice thatcompile-eis defined by structural
+recursion, much like the interpreter.We can now try out a few examples:Examples>(compile(Prim1'add1(Prim1'add1(Int40))))(list(Global 'entry)(Label 'entry)(Mov 'rax 40)(Add 'rax 1)(Add 'rax 1)(Ret))>(compile(Prim1'sub1(Int8)))(list(Global 'entry)(Label 'entry)(Mov 'rax 8)(Sub 'rax 1)(Ret))>(compile(Prim1'add1(Prim1'add1(Prim1'sub1(Prim1'add1(Int-8))))))(list(Global 'entry)(Label 'entry)(Mov 'rax -8)(Add 'rax 1)(Sub 'rax 1)(Add 'rax 1)(Add 'rax 1)(Ret))And give a command line wrapper for parsing, checking, and compiling
+files incompile-file.rkt,
+we can compile files as follows:shell>racket -t compile-file.rkt -m add1-add1-40.rktglobalentrydefaultrelsection.textglobalentryentry:movrax, 40addrax, 1addrax, 1retAnd using the sameMakefilesetup as in Abscond, we capture the whole compilation process with a
+single command:shell>make add1-add1-40.runmake[1]: Entering directory '/home/runner/work/www/www/langs/blackmail'racket-t compile-file.rkt -m add1-add1-40.rkt>add1-add1-40.snasm-g -f elf64 -o add1-add1-40.o add1-add1-40.sgccruntime.o add1-add1-40.o -o add1-add1-40.runrmadd1-add1-40.omake[1]: Leaving directory '/home/runner/work/www/www/langs/blackmail'>./add1-add1-40.run42Likewise, to test the compiler from within Racket, we use
+the sameasm-interpfunction to encapsulate running
+assembly code:Examples>(asm-interp(compile(Prim1'add1(Prim1'add1(Int40)))))42>(asm-interp(compile(Prim1'sub1(Int8))))7>(asm-interp(compile(Prim1'add1(Prim1'add1(Prim1'add1(Prim1'add1(Int-8)))))))-45.7Correctness and random testingWe can state correctness similarly to how it was stated for Abscond:Compiler Correctness:For all expressionseand
+integersi, if (e,i) in, then(asm-interp(compilee))equalsi.And we can test this claim by comparing the results of running
+compiled and interpreted programs, leading to the following property,
+which hopefully holds:Examples>(define(check-compilere)(check-eqv?(interpe)(asm-interp(compilee))))The problem, however, is that generating random Blackmail programs is
+less obvious compared to generating random Abscond programs
+(i.e. random integers).  Randomly generating programs for testing is
+its own well studied and active research area.  To side-step this
+wrinkle, we have provided a small utility for generating random
+Blackmail programs (random.rkt),
+which you can use, without needing the understand how it was
+implemented.Examples>(require"random.rkt")>(random-expr)'#s(Prim1sub1#s(Prim1 sub1 #s(Prim1 add1 #s(Int 16))))>(random-expr)'#s(Int 1)>(random-expr)'#s(Prim1add1#s(Prim1 add1 #s(Prim1 add1 #s(Int 2))))>(random-expr)'#s(Prim1add1#s(Prim1 sub1 #s(Prim1 sub1 #s(Int 1))))>(random-expr)'#s(Int -2)>(definee(random-expr))>e'#s(Prim1 add1 #s(Int 2))>(compilee)(list(Global 'entry)(Label 'entry)(Mov 'rax 2)(Add 'rax 1)(Ret))>(for([i(in-range10)])(check-compiler(random-expr)))It’s now probably time to acknowledge a short-coming in our
+compiler. Although it’s great that random testing is
+confirming the correctness of the compiler onspecificexamples, the compiler is unfortunately not
+correct in general.  Neither was the Abscond compiler.To see why, recall that integers in Blackmail are
+represented as 64-bit values in the compiled code. The
+problem arises when 64 bits isn’t enough. Since the run-time
+system interprets the 64-bit values as asignedinteger, we have 1 bit devoted to the sign and 63 bits
+devoted to the magnitude of the integer. So the largest
+number we can represent is(sub1(expt263))and
+the smallest number is(-(expt263)). What
+happens if a program exceeds these bounds? Well, whatever
+x86 does.  Let’s see:Examples>(definemax-int(sub1(expt263)))>(definemin-int(-(expt263)))>(asm-interp(compile(Intmax-int)))9223372036854775807>(asm-interp(compile(Prim1'add1(Intmax-int))))-9223372036854775808>(asm-interp(compile(Intmin-int)))-9223372036854775808>(asm-interp(compile(Prim1'sub1(Intmin-int))))9223372036854775807Now there’s a fact you didn’t learn in grade school: in the
+first example, adding 1 to a number made it smaller; in the
+second, subtracting 1 made it bigger!This problem doesn’t exist in the interpreter:Examples>(interp(Intmax-int))9223372036854775807>(interp(Prim1'add1(Intmax-int)))9223372036854775808>(interp(Intmin-int))-9223372036854775808>(interp(Prim1'sub1(Intmin-int)))-9223372036854775809So we have found a counter-example to the claim of compiler
+correctness:Examples>(check-compiler(Prim1'add1(Intmax-int)))--------------------FAILUREname:check-eqv?location:eval:99:0actual:9223372036854775808expected:-9223372036854775808-------------------->(check-compiler(Prim1'sub1(Intmin-int)))--------------------FAILUREname:check-eqv?location:eval:99:0actual:-9223372036854775809expected:9223372036854775807--------------------What can we do? This is the basic problem of a program not
+satisfying its specification.  We have two choices:change the spec (i.e. the semantics and interpreter)change the program (i.e. the compiler)We could change the spec to make it match the behaviour of
+the compiler. This would involve writing out definitions
+that match the “wrapping” behavior we see in the compiled
+code. Of course if the specification is meant to capture
+what Racket actually does, taking this route would be a
+mistake. Even independent of Racket, this seems like a
+questionable design choice. Wouldn’t it be nice to reason
+about programs using the usual laws of mathematics (or at
+least something as close as possible to what we think of as
+math)? For example, wouldn’t you like know that(<i(add1i))for all integersi?Unforunately, the other choice seems to paint us in to a
+corner. How can we ever hope to represent all possible
+integers in just 64 bits? We can’t. We need some new tricks.
+So in the meantime, our compiler is not correct, but writing
+down what it means to be correct is half the battle. We will
+get to correctness, but for the time being, we view the
+specification aspirationally.5.8Looking back, looking forwardWe’ve now built two compilers; enough to start observing a pattern.Recall the phases of a compiler described inWhat does a Compilerlooklike?. Let’s identify
+these pieces in the two compilers we’ve written:Parsedinto a data structure called anAbstract Syntax Treewe usereadto parse text into a s-expressionwe useparseto convert an s-expression into an ASTCheckedto make sure code is well-formed (and well-typed)Simplifiedinto some convenientIntermediate Representationwe don’t do any; the AST is the IROptimizedinto (equivalent) but faster programwe don’t do anyGeneratedinto assembly x86we usecompileto generate assembly (in AST form),
+and useasm-displayto print concrete X86-64 codeLinkedagainst a run-time (usually written in C)we link against our run-time written inmain.cOur recipe for building compiler involves:Build intuition withexamples,Model problem withdata types,Implement compiler viatype-transforming-functions,Validate compiler viatests.As we move forward, the language we are compiling will grow.  As the
+language grows, you should apply this recipe to grow the compiler
+along with the language.contents← prevupnext →
+6 Con: branching with conditionals►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►6Con:branching with conditionals6.1Conditional execution6.2Meaning of Con programs6.3An Example of Con compilation6.4A Compiler for Con6.5Correctness and random testingOn this page:6.1Conditional execution6.2Meaning of Con programs6.3An Example of Con compilation6.4A Compiler for Con6.5Correctness and random testing8.3contents← prevupnext →6Con: branching with conditionalsWhen you come to a fork in the road, take it.6.1Conditional execution6.2Meaning of Con programs6.3An Example of Con compilation6.4A Compiler for Con6.5Correctness and random testing6.1Conditional executionLet’s now consider adding a notion ofconditionalsto our target
+language.We’ll call itCon.We will use the following concrete syntax:(if(zero?e0)e1e2).This leads to the following grammar for concrete Con:And abstract grammar:Which can be modeled with the following definitions:con/ast.rkt#langracket(provideIntPrim1IfZero);;typeExpr=;;|(IntInteger);;|(Prim1OpExpr);;|(IfZeroExprExprExpr);;typeOp='add1|'sub1(structInt(i)#:prefab)(structPrim1(pe)#:prefab)(structIfZero(e1e2e3)#:prefab)The parser is similar to what we’ve seen before:con/parse.rkt#langracket(provideparse)(require"ast.rkt");;S-Expr->Expr(define(parses)(matchs[(?integer?)(Ints)][(list(?op1?o)e)(Prim1o(parsee))][(list'if(list'zero?e1)e2e3)(IfZero(parsee1)(parsee2)(parsee3))][_(error"Parseerror")]));;Any->Boolean(define(op1?x)(memqx'(add1sub1)))6.2Meaning of Con programsThe meaning of Con programs depends on the form of the expression and
+the new form is an if-expression.the meaning of a if expression(IfZeroe0e1e2)is
+the meaning ofe1if the meaning ofe0is 0 and is
+the meaning ofe2otherwise.Let’s consider some examples (using concrete notation):(if(zero?0)(add12)4)means3.(if(zero?1)(add12)4)means4.(if(zero?(if(zero?(sub11))10))(add12)4)means4.(if(zero?(add10))(add12)(if(zero?(sub11))10))means1.The semantics is inductively defined as before.  There aretwonew rules added for handling if-expressions: one for when the test
+expression means0and one for when it doesn’t.The interpreter has an added case for if-expressions, which
+recursively evaluates the test expression and branches based on its
+value.con/interp.rkt#langracket(provideinterp)(require"ast.rkt""interp-prim.rkt");;Expr->Integer(define(interpe)(matche[(Inti)i][(Prim1pe)(interp-prim1p(interpe))][(IfZeroe1e2e3)(if(zero?(interpe1))(interpe2)(interpe3))]))We’ve also made one trivial change, which is to moveinterp-prim1to its
+own module.  This will be useful in the future when more primitive operations are
+added, we won’t have to clutter up the interpreter:con/interp-prim.rkt#langracket(provideinterp-prim1);;OpInteger->Integer(define(interp-prim1opi)(matchop['add1(add1i)]['sub1(sub1i)]))We can confirm the interpreter computes the right result for the
+examples given earlier (usingparseto state the examples
+with concrete notation):Examples>(interp(parse'(if(zero?0)(add12)4)))3>(interp(parse'(if(zero?1)(add12)4)))4>(interp(parse'(if(zero?(if(zero?(sub11))10))(add12)4)))4>(interp(parse'(if(zero?(add10))(add12)(if(zero?(sub11))10))))1The argument for the correctness of the interpreter follows the same
+structure as forBlackmail, but with an added case for
+if-expressions.6.3An Example of Con compilationSuppose we want to compile(if(zero?8)23)...We already know how to compile the8,2, and3part.What needs to happen?Execute the code for8leaving the result in'rax,check whether'raxholds zero,if it does, execute the code for2,if it doesn’t, execute the code for3.We can determine whether8evaluates to0using a
+comparison instruction:(Cmprax0).  To do the conditional
+execution, we will need to jump to different parts of the code to
+either execute the code for2or3.  There are
+several ways we could accomplish this, but we take the following
+approach: immediately after the comparison, do a conditional jump to
+the code for the then branch when zero. Should the jump not occur,
+the next instructions will carry out the evaluation of the else
+branch, then (unconditionally) jump over the then branch code.To accomplish this, we will need two new labels: one for the then
+branch code and one for the end of the then branch code.  Thegensymfunction can be used to generate symbols that have not
+appeared before.In total, the code for this example would look like:(let((l0(gensym))(l1(gensym)))(list(Mov'rax8)(Cmp'rax0)(Jel0)(Mov'rax3)(Jmpl1)(Labell0)(Movrax2)(Labell1)))6.4A Compiler for ConNotice that the(Mov'rax8),(Movrax3)and(Movrax2)parts are just the instructions generated by
+compiling8,2and3.  Generalizing from
+this, we arrive at the following code for the compiler:(let((l0(gensym'if))(l1(gensym'if)))(append(compile-ee1)(list(Cmp'rax0)(Jel0))(compile-ee3)(list(Jmpl1)(Labell0))(compile-ee2)(list(Labell1))))This will require extending our use of a86 instructions; in
+particular, we addJmp,Je, andCmpinstructions.The complete compiler code is:con/compile.rkt#langracket(provide(all-defined-out))(require"ast.rkt"a86/ast"compile-prim.rkt");;Expr->Asm(define(compilee)(prog(Global'entry)(Label'entry)(compile-ee)(Ret)));;Expr->Asm(define(compile-ee)(matche[(Inti)(compile-integeri)][(Prim1pe)(compile-prim1p(compile-ee))][(IfZeroe1e2e3)(compile-ifzeroe1e2e3)]));;Integer->Asm(define(compile-integeri)(seq(Mov'raxi)));;ExprExprExpr->Asm(define(compile-ifzeroe1e2e3)(let((l1(gensym'if))(l2(gensym'if)))(seq(compile-ee1)(Cmp'rax0)(Jel1)(compile-ee3)(Jmpl2)(Labell1)(compile-ee2)(Labell2))))Mirroring the change we made to the interpreter, we separate out a
+module for compiling primitives:con/compile-prim.rkt#langracket(providecompile-prim1)(require"types.rkt"a86/ast);;OpAsm->Asm(define(compile-prim1pc)(seqc(matchp['add1(Add'rax(value->bits1))]['sub1(Sub'rax(value->bits1))])))Let’s take a look at a few examples:Examples>(define(shows)(compile-e(parses)))>(show'(if(zero?8)23))(list(Mov 'rax 8)(Cmp 'rax 0)(Je 'if5649)(Mov 'rax 3)(Jmp 'if5650)(Label 'if5649)(Mov 'rax 2)(Label 'if5650))>(show'(if(zero?0)12))(list(Mov 'rax 0)(Cmp 'rax 0)(Je 'if5651)(Mov 'rax 2)(Jmp 'if5652)(Label 'if5651)(Mov 'rax 1)(Label 'if5652))>(show'(if(zero?0)(if(zero?0)89)2))(list(Mov 'rax 0)(Cmp 'rax 0)(Je 'if5653)(Mov 'rax 2)(Jmp 'if5654)(Label 'if5653)(Mov 'rax 0)(Cmp 'rax 0)(Je 'if5655)(Mov 'rax 9)(Jmp 'if5656)(Label 'if5655)(Mov 'rax 8)(Label 'if5656)(Label 'if5654))>(show'(if(zero?(if(zero?2)10))45))(list(Mov 'rax 2)(Cmp 'rax 0)(Je 'if5659)(Mov 'rax 0)(Jmp 'if5660)(Label 'if5659)(Mov 'rax 1)(Label 'if5660)(Cmp 'rax 0)(Je 'if5657)(Mov 'rax 5)(Jmp 'if5658)(Label 'if5657)(Mov 'rax 4)(Label 'if5658))And confirm they are running as expected:Examples>(define(tells)(asm-interp(compile(parses))))>(tell'(if(zero?8)23))3>(tell'(if(zero?0)12))1>(tell'(if(zero?0)(if(zero?0)89)2))8>(tell'(if(zero?(if(zero?2)10))45))46.5Correctness and random testingThe statement of correctness follows the same outline as before:Compiler Correctness:For all expressionseand
+integersi, if (e,i) in,
+then(asm-interp(compilee))equalsi.Again, we formulate correctness as a property that can be tested:Examples>(define(check-compilere)(check-equal?(asm-interp(compilee))(interpe)e))Generating random Con programs is essentially the same as Blackmail
+programs, and are provided in arandom.rktmodule.Examples>(require"random.rkt")>(random-expr)'#s(IfZero#s(Prim1 sub1 #s(Int -256))#s(Prim1 add1 #s(Int 1))#s(Prim1 sub1 #s(Prim1 sub1 #s(Int 3))))>(random-expr)'#s(Prim1add1#s(Prim1sub1#s(IfZero#s(IfZero#s(Int -1)#s(Int 1)#s(Int -4))#s(Prim1 sub1 #s(Int 11))#s(Int 0))))>(random-expr)'#s(Int 2)>(random-expr)'#s(Prim1sub1#s(Prim1sub1#s(Prim1 add1 #s(Prim1 sub1 #s(Int -16)))))>(for([i(in-range10)])(check-compiler(random-expr)))contents← prevupnext →
+2 From OCaml to Racket►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►2From OCaml to Racket2.1Basic values2.2Basic operations2.3Functions2.4Definitions2.5Lists2.6Pattern matching2.7Datatypes2.8Symbols2.9Quote, quasiquote, and unquote2.10Poetry of s-expressions2.11Testing, modules, submodulesOn this page:2.1Basic values2.2Basic operations2.3Functions2.4Definitions2.5Lists2.6Pattern matching2.7Datatypes2.8Symbols2.9Quote, quasiquote, and unquote2.10Poetry of s-expressions2.11Testing, modules, submodules8.3contents← prevupnext →2From OCaml to RacketRacket = OCaml with uniform syntax and no types (for now)2.1Basic values2.2Basic operations2.3Functions2.4Definitions2.5Lists2.6Pattern matching2.7Datatypes2.8Symbols2.9Quote, quasiquote, and unquote2.10Poetry of s-expressions2.11Testing, modules, submodules2.1Basic valuesLet’s start by looking at something you know: OCaml.  In OCaml,
+expressions can include literals for numbers, strings, booleans.  Here
+we are using the OCaml read-eval-print-loop (REPL) to type in examples
+and evaluate their results:OCaml REPL#8;;- :int=8#"ocaml";;- :string="ocaml"#true;;- :bool=true#false;;- :bool=falseNote that the;;is not part of the expression syntax, but is a
+terminator token, signalling to the REPL that the expression is
+complete and ready to be evaluated.The Racket REPL operates similarly, but doesn’t require a terminator:Racket REPL>88>"racket""racket">#t#t>#f#fOCaml prints out the type of each expression, in addition to its
+value, while Racket only prints the value.  The notation for booleans
+is slightly different, but both languages agree on numbers, strings,
+and booleans.  OCaml uses a#prompt, while Racket uses>,
+but these differences are immaterial.  The languages are essentially
+the same so far.2.2Basic operationsOCaml uses an infix notation for writing operations.OCaml REPL#1+2*2;;- :int=5The order of operations follows the usual mathematical precendence
+rules (which you must memorize), or you can use parentheses to indicate grouping:OCaml REPL#1+ (2*2);;- :int=5# (1+2) *2;;- :int=6Extraneous parenthesis are fine:OCaml REPL# (((1))) + ((2*2));;- :int=5Compared to many languages you may know, including OCaml, Racket
+employs a uniform, minimalistic concrete syntax based on the concept
+of parenthesized, prefix notation.In this notation, parentheses play a much more central role.  They are
+not optional and they signal the form of the expression.Languages, like people, descend from their ancestors and inherit some
+of their properties.  In the case of notation, Racket inherits the
+Lisp (and Scheme) notation for programs.  It takes a bit of getting
+used to, but once aclimated, the notation should feel lightweight and
+consistent; there is verry little to memorize when it comes to syntax.So in Racket, we would write:Racket REPL>(+1(*22))5>(*(+12)2)6Note that there are no precendence rules for addition and
+multiplication: the form of the expression makes it unambiguous.Parenthesis indicate function applications, so adding extraneous
+parens means something different than in OCaml:Racket REPL>(1)application: not a procedure;expected a procedure that can be applied to argumentsgiven: 1Here the parens are indicating a function application.  The
+“function” is the first subexpression within the parens,
+i.e.1.  Of course,1isn’t a function and can’t be
+applied, hence the error.2.3FunctionsOCaml also has a notation for writing functions:OCaml REPL#funx y -> x + y;;- :int->int->int= <fun>This make an anonymous function that consumes two integers and
+produces their sum.To apply it, we can write it justapoxed with arguments:OCaml REPL# (funx y -> x + y)34;;- :int=7Note that in OCaml, every function is a function of exactly one
+argument.  Thereforefun x y -> x + yis actuallty shorthand forfun x -> fun y -> x + y.Applying such a function to fewer than 2 arguments will do apartialfunction application, which will produce a function
+that take the remaining arguments:OCaml REPL# (funx y -> x + y)3;;- :int->int= <fun>To encode functions that must be given two arguments, a tuple can be
+used:OCaml REPL#fun(x, y) -> x + y;;- :int*int->int= <fun>To apply such a function, it must be given a pair of integers:OCaml REPL# (fun(x, y) -> x + y) (3,4);;- :int=7The use of(x, y)here in the function parameters is actually apattern.  This can be understood as shorthand for:OCaml REPL#funp ->matchpwith(x, y) -> x + y;;- :int*int->int= <fun>So even this function is actually taking a single argument (which must
+be a pair of numbers).Racket has a similar notation for writing functions:Racket REPL>(λ(x)(λ(y)(+xy)))#<procedure>You can also write this without the fancyλby
+spelling itlambda:Racket REPL>(lambda(x)(lambda(y)(+xy)))#<procedure>(In DrRacket, to insert a “λ” press Cmd+\.)To apply it, it must be written in parens, juxtaposed with arguments:Racket REPL>(((λ(x)(λ(y)(+xy)))3)4)7Functions in Racket do not always consume a single argument.  They can
+consume 0, 1, or more arguments.Racket REPL>(λ(xy)(+xy))#<procedure>This is not a shorthand for the function above it; rather it is a function that expects two arguments:Racket REPL>((λ(xy)(+xy))34)7Applying a function to the wrong number of arguments will result in an
+error (and not perform partial function application):Racket REPL>((λ(xy)(+xy))3)#<procedure>: arity mismatch;the expected number of arguments does not match the givennumberexpected: 2given: 12.4DefinitionsAt the top-level in OCaml, variables can be defined withletandlet rec:OCaml REPL#letx =3;;valx :int=3#lety =4;;valy :int=4# x + y;;- :int=7#letrecfact =funn ->matchnwith|0->1| n -> n * (fact (n -1));;valfact :int->int= <fun># fact5;;- :int=120In Racket, variables are defined with thedefineform:Racket REPL>(definex3)>(definey4)>(+xy)7>(definefact(λ(n)(matchn[01][n(*n(fact(-n1)))])))>(fact5)120(Note that the use of square brackets here is stylistic:
+from Racket’s point of view as long as “parentheses” (e.g.({[) match, any kind is acceptable.)In OCaml, function definitions can be written as:OCaml REPL#letrecfact n =matchnwith|0->1| n -> n * (fact (n -1));;valfact :int->int= <fun>This is just a shorthand for the definition written above in terms offun.Similarly in Racket, function definitions can be written as:Racket REPL>(define(factn)(matchn[01][n(*n(fact(-n1)))]))which is shorthand for the definition above usingλ.Notice both OCaml and Racket have pattern matching forms, which are
+quite useful for writing function in terms of a number of "cases."
+More on this in a minute.2.5ListsOCaml has a built-in list datatype.  The empty list is written[]and::is an operation for “consing” an element on to a list.
+So to build a list with three integer elements, 1, 2, and 3, you’d write:OCaml REPL#1::2::3:: [];;- :intlist= [1;2;3]The notation[1; 2; 3]is just a shorthand for the above.Racket has a built-in list datatype.  The empty list is written'()andconsis an operation for consing an element on to a list.
+To build the same list, you’d write:Racket REPL>(cons1(cons2(cons3'())))'(123)The notation(list123)is shorthand for the above.There is a slight difference here.  For one, OCaml lists must behomogeneous.  You can have a list
+of strings or a list of numbers, but you can’t have a list of stringsandnumbers.OCaml REPL# ["a";3];;Error: This expression hastypeintbut an expression was expectedoftypestringIn Racket, there is no such restriction:Racket REPL>(list"a"3)'("a"3)Also, in Racket,consplays the role of both tupling (making
+pairs) and making lists (making a pair of an element and another list).So in OCaml, you could make a pair("a", 3).  In Racket, you’d
+write(cons"a"3).  Note this is a pair and not a proper
+list.  In OCaml, tuples and lists are disjoint things.  In Racket,
+lists and tuples (pairs) are made out of the same stuff.This can be confusing the first time you encounter it, so
+let’s go over it a bit more.In Racket (or any Lisp),consplays the role of
+both the pair constructor and the list constructor.
+Non-empty lists are a subset of pairs: they are pairs whose
+second component is a list (either the empty list or another
+pair whose second component is a list, etc.).You can make pairs out of any kind of element and you can
+make lists out of any kind of elements. We can precisely
+define these sets as:Racket REPL;type ListofAny =;|'();| (cons Any ListofAny);type PairofAny =;| (cons Any Any)Or, to give more useful parameterized definitions:Racket REPL;type (Listof A) =;|'();| (cons A (Listof A));type (Pairof A B) =;| (cons A B)The functionsfirstandrestoperate on
+non-emptylists, producing the first element of the
+list and the tail of the list, respectively.Racket REPL>(first(cons3(cons4'())))3>(rest(cons3(cons4'())))'(4)These function will produce errors if given something that
+is a pair but not a list:Racket REPL>(first(cons34))first: contract violationexpected: (and/c list? (not/c empty?))given: '(3 . 4)>(rest(cons34))rest: contract violationexpected: (and/c list? (not/c empty?))given: '(3 . 4)On the other hand, the functionscarandcdraccess the left and right components of a pair
+(the names are admittedly awful and an artifact of Lisp
+history):Racket REPL>(car(cons34))3>(cdr(cons34))4When given pairs that are also lists, they behave just likefirstandrest:Racket REPL>(car(cons3(cons4'())))3>(cdr(cons3(cons4'())))'(4)2.6Pattern matchingOCaml has a very nice pattern matching for letting you express case
+analysis and decomposition in a concise way.Each pattern maching expression has a sub-expression that produce a
+value to be matched against and a number of clauses.  Each clause has
+a pattern and an expression.  The pattern potentially consists of data
+constructors, variables, and literals.  If the value matches the first
+pattern, meaning the value and the template match up on constructors
+and literals, then the variables are bound to the correspond parts of
+the value, and the right-hand side expression is evaluated.  If the
+value doesn’t match, the next pattern is tried, and so on.  It’s an
+error if none of the patterns match.So for example, we can write a function that recognize even digits as:OCaml REPL#leteven_digit n =matchnwith|0->true|2->true|4->true|6->true|8->true| _ ->false;;valeven_digit :int->bool= <fun>The patterns here, save the last one, are just integer literals.  Ifnis the same as any of these integers, the valuetrueis
+produced.  The last case uses a "wildcard," which matches anything and
+produces true.Here’s an example that matches a tuple, binding each part of the tuple
+to a name and then using those names to construct a different tuple:OCaml REPL#letswap p =matchpwith| (x, y) -> (y, x);;valswap : 'a * 'b -> 'b * 'a = <fun>Here the pattern uses a data constructor (the tuple constructor).  It
+matches any value that is made with the same constructor.Here is a recursive function for computing the sum of a list of
+numbers, defined with pattern matching:OCaml REPL#letrecsum xs =matchxswith| [] ->0| x :: xs -> x + (sum xs);;valsum :intlist->int= <fun># sum [4;5;6];;- :int=15We can do the same in Racket:Racket REPL>(define(even-digitn)(matchn[0#t][2#t][4#t][6#t][8#t][_#f]))>(define(swapp)(matchp[(consxy)(consyx)]))>(define(sumxs)(matchxs['()0][(consxxs)(+x(sumxs))]))>(sum(list456))152.7DatatypesOCaml has the ability to declare new datatypes.  For example,
+we can define type for binary trees of numbers:OCaml REPL#typebt =| Leaf| Nodeofint* bt * bt;;typebt = Leaf | Nodeofint* bt * btThis declares a new type, namedbt. There are twovariantsof thebttype, each with their own
+constructor:LeafandNode. TheLeafconstructor takes no arguments, so just writingLeafcreates a (empty) binary tree:OCaml REPL# Leaf;;- : bt = LeafTheNodeconstructor takes three arguments: an integer
+and two binary trees. Applying the constructor to a tuple of
+three things, makes a (non-empty) binary tree:OCaml REPL# Node (3, Leaf, Leaf);;- : bt = Node (3, Leaf, Leaf)Binary trees are an example of arecursivedatatype,
+since one of the variants contains binary trees. This means
+we can build up arbitrarily large binary trees by nesting
+nodes within nodes:OCaml REPL# Node (3, Node (4, Leaf, Leaf), Node (7, Leaf, Leaf));;- : bt = Node (3, Node (4, Leaf, Leaf), Node (7, Leaf, Leaf))Pattern matching is used to do case analysis and deconstruct
+values. So for example, a function that determines if a
+binary tree is empty can be written as:OCaml REPL#letbt_is_empty bt =matchbtwith| Leaf ->true| Node _ ->false;;valbt_is_empty : bt ->bool= <fun># bt_is_empty Leaf;;- :bool=true# bt_is_empty (Node (3, Leaf, Leaf));;- :bool=falseThe patterns use the constructor names to discriminate on
+which constructor was used for a given binary tree. The use
+of the wildcard here is just saying it doesn’t matter what’s
+inside a node; if you’re a node, you’re not empty.Recursive functions work similarly, but use variables inside
+patterns to bind names to the binary trees contained inside
+a node:OCaml REPL#letrecbt_height bt =matchbtwith| Leaf ->0| Node (_, left, right) ->1+max(bt_height left) (bt_height right);;valbt_height : bt ->int= <fun># bt_height Leaf;;- :int=0# bt_height (Node (4, Node (2, Leaf, Leaf), Leaf));;- :int=2We do something very similar in Racket usingstructures. A structure type is like a (single) variant of
+a data type in OCaml: it’s a way of combining several things
+into one new kind of value.Racket REPL>(structleaf())>(structnode(ileftright))This declares two new kinds of values: leaf structures and
+node structures. For each, we get a constructor, which is a
+function named after the structure type. Theleafconstructor takes no arguments. Thenodeconstructor takes 3 arguments.Racket REPL>(leaf)(leaf)>(node5(leaf)(leaf))(node5(leaf)(leaf))>(node3(node2(leaf)(leaf))(leaf))(node3(node2(leaf)(leaf))(leaf))There is no type system in Racket, but we can conceptually still
+define what we mean in a comment.  Just like in OCaml, we can use
+pattern matching to discriminate and deconstruct:Racket REPL;type Bt = (leaf) | (node Integer Bt Bt)>(define(bt-empty?bt)(matchbt[(leaf)#t][(node___)#f]))>(bt-empty?(leaf))#t>(bt-empty?(node5(leaf)(leaf)))#f>(define(bt-heightbt)(matchbt[(leaf)0][(node_leftright)(+1(max(bt-heightleft)(bt-heightright)))]))>(bt-height(leaf))0>(bt-height(node4(node2(leaf)(leaf))(leaf)))22.8SymbolsOne of the built-in datatypes we will use often in Racket is
+that of asymbol. A symbol is just an atomic peice of
+data. A symbol is written using thequotenotation(quotesymbol-name), which is abbreviated'symbol-name. What’s allowable as a symbol name
+follows the same rules as what’s allowable as a Racket
+identifier.Symbols don’t have a whole lot of operations. The main thing
+you do with symbols is tell them apart from eachother:Racket REPL>(equal?'fred'fred)#t>(equal?'fred'wilma)#fIt is possible to convert between symbols and strings:Racket REPL>(symbol->string'fred)"fred">(string->symbol"fred")'fredThere’s also a convient function that produces a symbol that is guaranteed
+to have not been used so far each time you call it:Racket REPL>(gensym)'g2803>(gensym)'g2804>(gensym)'g2805They can be used to define “enum” like datatypes:Racket REPL;type Flintstone = 'fred | 'wilma | 'pebblesYou can use pattern matching to match symbols:Racket REPL>(define(flintstone?x)(matchx['fred#t]['wilma#t]['pebbles#t][_#f]))>(flintstone?'fred)#t>(flintstone?'barney)#fThere’s really not a precise analog to symbols in OCaml.
+(There’s something called a polymorphic variant, which plays
+a similar role to symbols in OCaml, but it wasn’t covered in
+CMSC 330.)2.9Quote, quasiquote, and unquoteOne of the distinguishing features of languages in the Lisp family
+(such as Scheme and Racket) is thequoteoperator and its
+closely related cousinsquasiquote,unquote, andunquote-splicing.Let’s start withquote.The “tick” character'dis used as a shorthand for(quoted).You’ve already seen it show up with symbols:'xis the symbolx.  It also shows up in the notation for the empty list:'().But you can also writequotearound non-empty lists like'(xyz).  This makes a list of symbols.  It is equivalent to
+saying(list'x'y'z).In fact, you can nest lists within the quoted list:'((x)y(qr)).  This is equivalent to(list(list'x)'y(list'q'r)).Here’s another:'(()(())((()))).  This is equivalent to(list'()(list'())(list(list'())))So, anything you can write with quoted lists, you can write without
+quoted lists by pushing the quote inward until reaching a symbol or an
+empty set of parenthesis.You can also put strings, booleans, and numbers inside of aquote.  As you push the quote inward, it simply disappears
+when reaching a string, boolean or number.  So'5is just5.  Likewise'#tis#tand'"Fred"is"Fred".You can also write pairs withquote, which uses the.notation for separating the left and right part of the pair.  For
+example,'(1.2)is equivalent to(cons12).  If
+you write something like'(123.4), what you are in effect
+saying is(cons1(cons2(cons34))), an improper list that
+ends in4.In essence,quoteis a shorthand for conveniently
+constructing data and is a very concise notation for writing down
+ad-hoc data.  It serves much the same purpose as formats like JSON and
+XML, except there’s even less noise.To summarize, withquote, you can constructstringsbooleansnumberssymbolsand... pairs (or lists) of those things (including this one)The kind of things you can construct with thequoteform are
+often calleds-expressions, short forsymbolic
+expressions.We can give a type definition for s-expressions:Racket REPL;type S-Expr =;| String;| Boolean;| Number;| Symbol;| (Listof S-Expr)The reason for this name is because anything you can write
+down as an expression, you can write down inside aquoteto obtaina data representationof
+that expression. You can render an expression as a symbolic
+representation of itself.For example,(+12)is an expression.  When run, it applies
+thefunctionbound to the variable+to the arguments1and2and produces3.  On the other hand:'(+12)constructs a peice of data, namely, a list of three
+elements.  The first element is thesymbol+, the second
+element is2, the third element is3.We will be using (subsets of) s-expressions extensively as our data
+representation of AST and IR expressions, so it’s important to gain a
+level of fluency with them now.Once you understandquote, moving on toquasiquote,unquote, andunquote-splicingare pretty
+straight-forward.Let’s start withquasiquote. The “backtick”
+character`dis used as a shorthand for(quasiquote d)and the “comma” character,eis
+shorthand for(unquote e). The(quasiquote d)form
+means the same thing as(quote d), with the exception
+that if(unquote e)appears anywhere insided,
+then theexpressioneis evaluated and it’s
+value will be used in place of(unquote e).This gives us the ability to “escape” out of a quoted
+peice of data and go back to expression mode.If we think ofquasiquotelikequotein
+terms of “pushing in” then the rules are exactly the same
+except that when aquasiquoteis pushed up next to
+anunquote, the two “cancel out.” So`,eis
+juste.For example,`(+1,(+11))is equivalent to(list'+1(+11)), which is equivalent to(list'+12).So ifquotesignals us to stop interpreting things
+as expressions, but instead as data,quasiquotesignals us to stop interpreting things as expression, but
+instead as data..unless we encounter aunquote, in which case you go back to interpreting
+things as expressions.The last remaining peice isunquote-splicing, which
+is abbreviated with “comma-at”:,@emeans(unquote-splicing e). Theunquote-splicingform is
+likeunquotein that if it occurs within aquasiquote, it means we switch back in to
+expression mode. The difference is the expression must
+produce a list (or pair) and the elements of that list (or
+pair) are spliced in to the outer data.So for example,`(+1,@(mapadd1'(23)))is
+equivalent to(cons'+(cons1(mapadd1(list23)))), which is
+equivalent to(list'+134), or'(+134).If the expression inside theunquote-splicingproduces something other than a pair, an error is signalled.2.10Poetry of s-expressionsThe use of structures lets us program in a style very
+similar to idiomatic OCaml programming. For each variant
+data type, we can define a structure type for each variant
+and use pattern matching to process such values.However, we are going to frequently employ a different idiom
+for programming with recursive variants which doesn’t rely
+on structures, but rather uses symbols in place of
+constructors and lists in place of fields.Let’s revisit the binary tree example, using this style.Notice thatleafstructureq is a kind of atomic
+data. It doesn’t contain anything and its only real purpose
+is to be distinguishable fromnodestructures. On
+the other hand anodestructure needs to be
+distinguishable fromleafs, but also contain 3
+peices of data within it.We can formulate definition of binary trees using only
+symbols and lists as:Racket REPL;type Bt = 'leaf | (list 'node Integer Bt Bt)So the following are binary trees:Racket REPL>'leaf'leaf>(list'node3'leaf'leaf)'(node3leafleaf)>(list'node3(list'node7'leaf'leaf)(list'node9'leaf'leaf))'(node3(node7leafleaf)(node9leafleaf))This formulation has the added benefit that we write binary trees
+as s-expressions:Racket REPL>'leaf'leaf>'(node3leafleaf)'(node3leafleaf)>'(node3(node7leafleaf)(node9leafleaf))'(node3(node7leafleaf)(node9leafleaf))We re-write our functions to match this new datatype definition:Racket REPL>(define(bt-empty?bt)(matchbt['leaf#t][(cons'node_)#f]))>(bt-empty?'leaf)#t>(bt-empty?'(node3(node7leafleaf)(node9leafleaf)))#f>(define(bt-heightbt)(matchbt['leaf0][(list'node_leftright)(+1(max(bt-heightleft)(bt-heightright)))]))>(bt-height'leaf)0>(bt-height'(node3(node7leafleaf)(node9leafleaf)))2We even can usequasiquotenotation in patterns to write
+more concise definitions:Racket REPL>(define(bt-empty?bt)(matchbt[`leaf#t][`(node.,_)#f]))>(bt-empty?'leaf)#t>(bt-empty?'(node3(node7leafleaf)(node9leafleaf)))#f>(define(bt-heightbt)(matchbt[`leaf0][`(node,_,left,right)(+1(max(bt-heightleft)(bt-heightright)))]))>(bt-height'leaf)0>(bt-height'(node3(node7leafleaf)(node9leafleaf)))2Moreover, we can embrace quasiquotation at the type-level and write:Racket REPL;type Bt = `leaf | `(node ,Integer ,Bt ,Bt)2.11Testing, modules, submodulesWe will take testing seriously in this class.  Primarily this will
+take the form of unit tests, for which we will use therackunitlibrary.  To use the library, you mustrequireit.Here is a simple example:Racket REPL>(requirerackunit)>(check-equal?(add14)5)>(check-equal?(*23)7)--------------------FAILUREname:check-equal?location:eval:76:0actual:6expected:7--------------------Thecheck-equal?function takes two arguments (and an
+optional third for a message to display should the test fail) and
+checks that the first argument produces something that isequal?to the expected outcome given as the second argument.There are many other forms of checks and utilities for building up
+larger test suites, butcheck-equal?will get us a long way.As a matter of coding style, we will place tests nearby the function
+they are testing and locate them within their ownmodule.
+Let’s talk about modules for a minute.In Racket, a module is the basic unit of code organization.  Every
+file is a module whose name is derived from the filename, but you can
+also write modules without saving them in a file.  For example:Racket REPL>(modulebtracket(providebt-height)(define(bt-heightbt)(matchbt[`leaf0][`(node,_,left,right)(+1(max(bt-heightleft)(bt-heightright)))])))This declares a module namedbt.  It provides a single value
+namedbt-height.We can require the module from the REPL to gain access to the modules
+provided values:Racket REPL>(require'bt)>(bt-height'leaf)0We could have also used the#lang racketshorthand for(module bt racket ...)and saved this in a file calledbt.rkt.  To import from a file in the current directory, you’d
+write(require "bt.rkt").  But this doesn’t work well in REPL.For the most part we will organize our programs into single module
+files using the#lang racketshorthand.  But we will place tests
+within a “sub”-module, i.e. a module nested inside of the module
+that contains the code it tests.  We will use a special form calledmodule+which declares a submodule that has access to the
+enclosing module.  Moreover, repeated uses ofmodule+will
+add content to the submodule.  By convention, we will name the testing
+submoduletest.So here’s a second version of thebtmodule with unit tests
+included (and more code).  Note the use ofall-defined-outto
+provide everything:Racket REPL>(modulebt2racket;provides everything defined in module(provide(all-defined-out))(module+test(requirerackunit))(define(bt-empty?bt)(matchbt['leaf#t][(cons'node_)#f]))(module+test(check-equal?(bt-empty?'leaf)#t)(check-equal?(bt-empty?'(node3(node7leafleaf)(node9leafleaf)))#f))(define(bt-heightbt)(matchbt[`leaf0][`(node,_,left,right)(+1(max(bt-heightleft)(bt-heightright)))]))(module+test(check-equal?(bt-height'leaf)0);intentionally wrong test:(check-equal?(bt-height'(node3leafleaf))2)))Requiring this module with makebt-height, butit will not run the tests:Racket REPL>(require'bt2)Running the tests only happens when thetestsubmodule is required:Racket REPL>(require(submod'bt2test))--------------------FAILUREname:check-equal?location:eval:80:0actual:1expected:2--------------------Putting it all together, we can write the following code and save it
+in a file calledbt.rkt.  (You can right-click the file name and
+save the code to try it out.)intro/bt.rkt#langracket(provide(all-defined-out))(module+test(requirerackunit));;typeBt=;;|`leaf;;|`(node,Integer,Bt,Bt);;Bt->Boolean;;Isthebinarytreeempty?(define(bt-empty?bt)(matchbt['leaf#t][(cons'node_)#f]))(module+test(check-equal?(bt-empty?'leaf)#t)(check-equal?(bt-empty?'(node3(node7leafleaf)(node9leafleaf)))#f));;Bt->Natural;;Computetheheightofabinarytree(define(bt-heightbt)(matchbt[`leaf0][`(node,_,left,right)(+1(max(bt-heightleft)(bt-heightright)))]))(module+test(check-equal?(bt-height'leaf)0)(check-equal?(bt-height'(node3leafleaf))1)(check-equal?(bt-height'(node2leaf(node1leafleaf)))2))This code follows a coding style that we will use in this course:it’s organized in a module,data type definitions occur at the top of the file,it uses a test submodule to group unit tests,tests occur immediately after the functions they test,functions are annotated with type signatures and short purpose statements, andindentation follows standard conventions (which DrRacket can apply for you).From the command line, you can run a module’s tests using the Racket
+command line testing toolraco test:shell>raco test bt.rktracotest:(submod"bt.rkt"test)5testspassedOr simply give a directory name and test everything within that directory:shell>raco test .racotest:(submod"./bt.rkt"test)5testspassedcontents← prevupnext →
+3 a86: a Little Assembly Language►CMSC 430:Design and Implementation of Programming LanguagesSyllabusTextsScheduleNotesAssignmentsMidtermsProjectSoftware▼Notes1Whatisa Compiler?2From OCaml to Racket3a86:a Little Assembly Language4Abscond:a language of numbers5Blackmail:incrementing and decrementing6Con:branching with conditionals7Dupe:a duplicity of types8Dodger:addressing a lack of character9Evildoer:change the world a couple nibbles at a time10Extort:when errors exist11Fraud:local binding, variables, and binary operations12Hustle:heaps and lists13Hoax:vectors and strings14Iniquity:function definitions and calls15Jig:jumping to tail calls16Knock:pattern matching17Loot:lambda the ultimate18Mug:symbols and interned string literals19Mountebank:quote and compound static data20Neerdowell:structures►3a86:a Little Assembly Language3.1Overview3.2Giving x86 a try3.3a86:Representing x86 Code as Data3.4Stacks:pushing, popping, calling, returning3.5a86 Reference3.6Instruction set3.7From a86 to x863.8An Interpreter for a86On this page:3.1Overview3.2Giving x86 a try3.3a86:Representing x86 Code as Data3.4Stacks:pushing, popping, calling, returning3.5a86 Reference3.6Instruction setregister?label?instruction?offset?seqprog%%%%%%OffsetLabelExternCallRetMovAddSubCmpJmpJeJneJlJgAndOrXorSalSarPushPopLea3.7From a86 to x86asm-displayasm-string3.8An Interpreter for a86asm-interpcurrent-objsasm-interp/io8.3contents← prevupnext →3a86: a Little Assembly LanguageYou need to let the little things that would ordinarily bore you suddenly thrill you.3.1Overview3.2Giving x86 a try3.3a86: Representing x86 Code as Data3.4Stacks: pushing, popping, calling, returning3.5a86 Reference3.6Instruction set3.7From a86 to x863.8An Interpreter for a863.1Overviewx86 is an instruction set architecture (ISA), which is a
+fancy way of saying a programming language whose interpreter
+is implemented in hardware. Really, x86 is a family of
+instruction set architectures, and the first member of the
+family was 8086, a 16-bit ISA for Intel’s 8086 chipset.x86 is old. It’s older than the professors teaching this
+class. But it lives on today in Intel and AMD based
+computers in the form x86-64, the 64-bit descendant of the
+8086 language.Because it’s old and because the design of each generation
+of x86 has had significant backwards compatability
+requirements and because modern processors are sophisticated
+pieces of machinery, the x86-64 language is, well,
+complicated. For example,Intel’s x86 software developer’s manualis 5,066 pages
+long.AMD’s manualis 3,242 pages.x86-64 is going to be used as the target language of our
+compiler. We’ll build up a translation from a very
+high-level language, based on Racket, down to the very
+low-level langauge of x86-64.However, that doesn’t mean we need to digest 8K+ pages of
+dense technical manuals. We will only use very small
+fraction of the x86-64 instruction set.To make our lives easier, we will do what programming
+language designers often do, we will abstract the behemoth
+of x86-64 to a small, core language (which we calla86). Our compilers will target a86 and compiling from a86
+to x86 as the last step in the compiler pipeline will be
+dead simple.This chapter describes the a86 language.3.2Giving x86 a tryBefore describing a86, let’s take a brief look at x86.There are a few different human-readable formats for writing
+x86 assembly code, but we’ll be using the one supported bythe Netwide Assembler(NASM).Here’s an example x86 program, written using nasm syntax.
+The program has one global label calledentry, which
+will be the main entry point for the program. This program
+computes the 36th triangular number, which will reside in
+registerraxwhen the code returns.The conventions for label names differ between Mac and
+Linux systems.  On MacOS, you need to prefix all label names with an
+underscore, while on Linux you do not.  So on a Mac, you would use the
+names_entry,_tri, and_done, while on Linux you would
+useentry,tri, anddone.This example is shown using the Linux naming convention, because that’s what operating
+system was used when this web page was built.a86/tri.sglobalentrydefault relsection.textglobalentryentry:movrbx,36; the "input";;; tri: a recursive function for computing nth;;; triangular number, where n is given in rbx.tri:cmprbx,0; if rbx = 0, donejedonepushrbx; save rbxsubrbx,1calltri; compute tri(rbx-1) in raxpoprbx; restore rbxaddrax, rbx; result is rbx+tri(rbx-1)retdone:; jump here for base casemovrax,0; return 0retThenth triangular number is the sum of the integers
+from 0 ton, so the36th triangular number is0+1+2+3+ ... +34+35+36.This code is not intended to be a model of efficient
+computation, rather it demonstrates some important x86
+instructions and shows how to compute in a recursive style,
+even at a low-level.Without getting too bogged down in the details, here how the
+code works. Instructions execute one after another. There
+are a number of registers which can be used to hold values.
+This code makes use of theraxandrdiregister
+(and some other registers are implicitly used and altered by
+thecall,push,popandretinstructions). The lines likeentry:,tri:, anddone:are not instructions, but labels – they are
+names for locations in the source code and can be used as
+the targets of jumps and calls.Suppose we start executing atentry.mov rbx, 36sets therbxregister to 36.cmp rbx 0compares the value in registerrbxto zero. Executing this instruction sets a flag in the
+CPU, which affects subsequent “conditional” instructions.
+In this program, the next instruction is a conditional jump.je doneeither jumps to the instruction
+following labeldoneor proceeds to the next
+instruction, based on the state of the comparison flag. Thejeinstruction jumps if the comparison was equal, so
+control jumps to done ifrbxwas 0 in this program. If
+not, the next instruction is executed.push rbxuses memory as a stack to save the
+value ofrbx. Under the hood this is modifying a
+register that holds a pointer to the stack memory location
+(registerrsp).sub rbx, 1decrementsrbxby 1.call triperforms something like a function
+call; it uses memory as a stack to save the current location
+in the code (which is where control should return to after
+the function has completed). After saving this return
+pointer, it jumps to the labeltri. There aren’t really
+functions, but this uses the stack to mimic the
+call-and-return mechanism of functions.pop rbxuses the stack memory to pop off the top
+element and move it intorbx, adjusting the stack
+pointer appropriately.  This has the effect of restoringrbxto the value saved earlier by thepush, i.e. before the decrement
+and any changes done in the call totri.add rax, rbxupdatesraxto holdraxplusrbx.retdoes a “return,” i.e. it pops an address
+from the stack and jumps to it. In this case, the jump
+either returns from to a previous call totrior to
+original caller ofentry.mov rax, 0this instruction is only reached from
+the earlier conditional jump. It setsraxto 0. This
+program computes its result inraxso this is saying
+that whenrbx(the “input”) is 0, then (the
+“output”) is 0.retdoes a “return,” either to a prior call totrior the caller ofentry.Despite the lower-level mechanisms, this code computes in a
+way similar to a non-tail recursive definition of thetrifunction written in Racket:(define(trin)(if(=n0)0(+n(tri(sub1n)))))(tri36)As an exercise to check your understanding, try writing a
+tail-recursive version oftriand the corresponding
+x86 code, which should not need to push anything to the
+stack or use thecallinstruction.We can compile thetri.sassembly program to an object
+file withnasm:The format argument should bemacho64on
+Mac OS andelf64on Linux.shell>nasm -f elf64 -o tri.o tri.sTo run the object file, we will need to link with a small C program
+that can call theentrylabel of our assembly code and then
+print the result:a86/main.c#include<stdio.h>#include<inttypes.h>int64_tentry();intmain(intargc,char** argv) {int64_tresult = entry();printf("%"PRId64"\n", result);return0;}Notice that from the C program’s perspective, the assembly
+code defines what looks like a C function calledentrythat returns anint64_tresult.How does this work? When the C program callsentryit
+places a return pointer on the stack and jumps toentry. The fact that we decided to put the result in
+registerraxwas not arbitrary – that’s the register
+that by convention is used for a return value. When the
+assembly code executes it’s finalretinstruction, it
+jumps back to C with the 36th triangular number inrax,
+which the C side knows is the return value. This convention
+is part of a larger set of conventions known as theApplication Binary Interface. For a reference, see theTextssection of the notes.We can compile themain.cC program to an object file withgcc:shell>gcc -c main.c -o main.oNow we can make an executable by linking the two together:shell>gcc main.o tri.o -o triFinally, we can run the executable:shell>./tri666There, of course, is a lot more to x86-64 than what’s been
+shown here. If you want to dig deeper, check the references
+inTexts.  But now let’s turn to a86.3.3a86: Representing x86 Code as DataHere we will employ one of the great ideas in computer
+science: we will represent programs as data. Rather than
+toil away at the level of x86, writing programs directly in
+nasm syntax, compiling, and running them, we will instead
+design a data type definition for representing x86 programs
+andcomputeprograms.Our representation will not be complete – this is going to
+help us simplify x86 down to something manageable. We won’t
+cover every instruction and we won’t cover every variation
+of the instructions we do cover.An a86 program is a list of a86 instructions. Each
+instruction is represented as a structure, described in the
+following section.Before working through these examples, you’ll need to
+install thea86module, part of thelangspackage
+for this course.  SeeThelangspackagefor details on
+installing.Here’s the triangular number example:%,%%, and%%%are
+constructors for assembly comments.Examples;import the a86 library>(requirea86);a86 code that computes the 36th triangular number>(definetri-36(list(Global'entry)(Label'entry)(Mov'rbx36)(%"the \"input\"")(%%%"tri: a recursive function for computing nth")(%%%"triangular number, where n is given in rbx.")(Label'tri)(Cmp'rbx0)(%"if rbx = 0, done")(Je'done)(Push'rbx)(%"save rbx")(Sub'rbx1)(Call'tri)(%"compute tri(rbx-1) in rax")(Pop'rbx)(%"restore rbx")(Add'rax'rbx)(%"result is rbx+tri(rbx-1)")(Ret)(Label'done)(%"jump here for base case")(Mov'rax0)(%"return 0")(Ret)))This code should look familiar. At first glance it’s just
+the x86 code with more parentheses.And who
+doesn’t love more parentheses?But something fundamental
+has happended. This a86 program is just a value in Racket.
+This means we can use Racket as aMeta-Languageto
+write programs that computewithx86 programs.So for example, let’s say you have two a86 programs and you
+want to glue them together into one: well that justappend. Suppose you want to compute which registers
+are used in a given a86 program? Suppose you want to replace
+uses of'raxwith'rdi? It just a matter
+of writing the right Racket function to do it.Here’s another immediate benefit. Instead of writing a
+single x86 program, let’s write an infinite set of a86
+programs, one for computing eachnth triangular
+number.  Easy-peasy:Examples;Natural -> a86;Computes a86 code that computes thenth triangular number>(define(trin)(list(Global'entry)(Label'entry)(Mov'rbxn)(%"the \"input\"")(%%%"tri: a recursive function for computing nth")(%%%"triangular number, where n is given in rbx.")(Label'tri)(Cmp'rbx0)(%"if rbx = 0, done")(Je'done)(Push'rbx)(%"save rbx")(Sub'rbx1)(Call'tri)(%"compute tri(rbx-1) in rax")(Pop'rbx)(%"restore rbx")(Add'rax'rbx)(%"result is rbx+tri(rbx-1)")(Ret)(Label'done)(Mov'rax0)(Ret)));recreate original program>(definetri-36(tri36))It’s also easy to go from our data representation to its
+interpretation as an x86 program.There is a function provided for printing an a86 program as an x86
+program using nasm notation, calledasm-display.  Calling
+this function prints to the current output port, but it’s also
+possible to write the output to a file or convert it to a string.Theasm-displayfunction knows what OS you are
+using and adjusts the label naming convention to use underscores or
+not, so that you don’t have to worry about it.Examples>(asm-display(tri36))global entrydefault relsection .textglobal entryentry:mov rbx, 36; the "input";;; tri: a recursive function for computing nth;;; triangular number, where n is given in rbx.tri:cmp rbx, 0; if rbx = 0, doneje donepush rbx; save rbxsub rbx, 1call tri; compute tri(rbx-1) in raxpop rbx; restore rbxadd rax, rbx; result is rbx+tri(rbx-1)retdone:mov rax, 0retNotice how this generates exactly what you saw intri.s.From here, we can assemble, link, and execute.We can also, since we have a general purpose programming
+language at our disposal in the meta-language, write a
+program to do all that for us:Examples>(asm-interp(tri36))666Theasm-interpfunction consumes ana86program as input and produces the integer result the program
+computes, i.e. it is anInterpreterfor a86. Behind
+the scenes it does this by converting to nasm, assemblying,
+compiling a thin C wrapper, executing the program, and
+reading the result. This will be a rather handy tool both in
+interactively exploring the a86 language (you can write
+assembly in a REPL), but also an important tool when it
+comes time to test the compilers we write.3.4Stacks: pushing, popping, calling, returningThe a86 execution model includes access to memory that can
+be used as a stack data structure. There are operations that
+manipulate the stack, such asPush,Pop,Call, andRet, and the stack register
+pointer'rspis dedicated to the stack. Stack
+memory is allocated in “low” address space and grows
+downward. So pushing an element on to the stackdecrements'rsp.The stack is useful as a way to save away values that may be
+needed later. For example, let’s say you have two
+(assembly-level) functions and you want to produce the sum
+of their results. By convention, functions return their
+result in'rax, so doing something like this
+won’t work:(seq(Call'f)(Call'g)(Add'rax...))The problem is the return value of'fgets
+clobbered by'g. You might be tempted to fix the
+problem by moving the result to another register:(seq(Call'f)(Mov'rbx'rax)(Call'g)(Add'rax'rbx))This works only so long as'gdoesn’t clobber'rbx. In general, it might not be possible to avoid
+that situation.  So the solution is to use the stack to save
+the return value of'fwhile the call to'gproceeds:(seq(Call'f)(Push'rax)(Call'g)(Pop'rbx)(Add'rax'rbx))This code pushes the value in'raxon to the stack
+and then pops it off and into'rbxafter'greturns. Everything works out so long as'gmaintains a stack-discipline, i.e. the stack
+should be in the same state when'greturns as when
+it was called.We can make a complete example to confirm that this works as
+expected. First let’s set up a little function for letting
+us try out examples:Examples>(define(egasm)(asm-interp(prog(Global'entry)(Label'entry)asm;the example code we want to try out(Ret)(Label'f);calling'f returns 36(Mov'rax36)(Ret)(Label'g);calling'g returns 6, but(Mov'rbx4);it clobbers'rbx just for the lulz(Mov'rax6)(Ret))))Now let’s try it, using the stack to confirm it does the
+right thing:Examples>(eg(seq(Call'f)(Push'rax)(Call'g)(Pop'rbx)(Add'rax'rbx)))42Compare that with the first version that used a register to
+save the result of'f:Examples>(eg(seq(Call'f)(Mov'rbx'rax)(Call'g)(Add'rax'rbx)))10ThePushandPopinstructions offer a
+useful illusion, but of course, there’s not really any data
+structure abstraction here; there’s just raw memory and
+registers. But so long as code abides by conventions, the
+illusion turns out to be the true state of affairs.What’s really going on under the hood ofPushandPopis that the'rspregister is
+decremented and the value is written to the memory location
+pointed to by the value of'rsp.The following code is equivalent to what we wrote above:Examples>(eg(seq(Call'f)(Sub'rsp8);"allocate" a word on the stack(Mov(Offset'rsp0)'rax);write'rax to top frame(Call'g)(Mov'rbx(Offset'rsp0));load top frame into'rbx(Add'rsp8);"deallocate" word on the stack(Add'rax'rbx)))42As you can see from this code, it would be easy to violate
+the usual invariants of stack data structure to, for
+example, access elements beyond the top of the stack. The
+value ofPushandPopis they make clear
+that you are using things in a stack-like way and they keep
+you from screwing up the accesses, offsets, and adjustments
+to'rsp.Just asPushandPopare useful illusions,
+so too areCallandRet. They give the
+impression that there is a notion of a procedure and
+procedure call mechanism in assembly, but actually there’s
+no such thing.Think for a moment about what it means to “call”'fin the examples above. When executing(Call'f),
+control jumps to the instruction following(Label'f). When we then get to(Ret),
+somehow the CPU knows to jumpbackto the instruction
+following the(Call'f)that we started with.What’s really going on is that(Call'f)is pushing
+the address of subsequent instruction on to the stack and
+then jumping to the label'f. This works in concert
+withRet, which pops the return address off the
+stack and jumping to it.Just as we could write equivalent code withoutPushandPop, we can write the same code withoutCallandRet.We do need one new trick, which is theLeainstruction, which loads an effective address. You can think
+of it likeMovexcept that it loads the address of
+something rather than what is pointed to by an address.  For our
+purposes, it is useful for loading the address of a label:(Lea'rax'f)This instruction putsthe addressof label'fintorax. You can think of this as
+loading afunction pointerinto'rax. With
+this new instruction, we can illuminate what is really going
+on withCallandRet:Examples>(eg(seq(Lea'rax'fret);load address of'fret label into'rax(Push'rax);push the return pointer on to stack(Jmp'f);jump to'f(Label'fret);<–return point for "call" to'f(Push'rax);save result (like before)(Lea'rax'gret);load address of'gret label into'rax(Push'rax);push the return pointer on to stack(Jmp'g);jump to'g(Label'gret);<–return point for "call" to'g(Pop'rbx);pop saved result from calling'f(Add'rax'rbx)))42The above shows how to encodeCallasLea,Push, andJmp.  The encoding ofRetis just:(seq(Pop'rbx)(Jmp'rbx))3.5a86 Reference(requirea86)package:langsThe a86 language may evolve some over the
+course of the semester, but we will aim to document any
+changes by updating this section. Also, because the run-time
+system changes for each language, you may need to do some
+work to haveasm-interpcooperate with your
+run-time system.This module provides all of the bindings froma86/ast,a86/printer,
+anda86/interp, described below3.6Instruction set(requirea86/ast)package:langsThis section describes the instruction set of a86.There are 16 registers:'rax,'rbx,'rcx,'rdx,'rbp,'rsp,'rsi,'rdi,'r8,'r9,'r10,'r11,'r12,'r13,'r14, and'r15. These registers are 64-bits wide.  There is also'eaxwhich accesses the lower 32-bits of'rax.
+This is useful in case you need to read or write 32-bits of memory.Each register plays the same role as in x86, so for example'rspholds the current location of the stack.procedure(register?x)→boolean?x:any/cA predicate for registers.procedure(label?x)→boolean?x:any/cA predicate for labelnames, i.e. symbols which are not register names.procedure(instruction?x)→boolean?x:any/cA predicate for instructions.procedure(offset?x)→boolean?x:any/cA predicate for offsets.procedure(seqx...)→(listofinstruction?)x:(or/cinstruction?(listofinstruction?))A convenience function for splicing togeter instructions and lists of instructions.Examples>(seq)'()>(seq(Label'foo))(list (Label 'foo))>(seq(list(Label'foo)))(list (Label 'foo))>(seq(list(Label'foo)(Mov'rax0))(Mov'rdx'rax)(list(Call'bar)(Ret)))(list(Label 'foo)(Mov 'rax 0)(Mov 'rdx 'rax)(Call 'bar)(Ret))procedure(progx...)→(listofinstruction?)x:(or/cinstruction?(listofinstruction?))Likeseq, but also checks that the instructions
+are well-formed in the following sense:Programs have at least one label; the first label is used as the entry point.All label declarations are unique.All label targets are declared.... other properties may be added in the future.This function is useful to do some early error checking
+over whole programs and can help avoid confusing NASM
+errors. Unlikeseqit should be called at the
+outermost level of a function that produces a86 code and not
+nested.Examples>(prog(Label'foo))(list (Label 'foo))>(prog(list(Label'foo)))(list (Label 'foo))>(prog(Mov'rax32))prog: no initial label found>(prog(Label'foo)(Label'foo))prog: duplicate label declaration found: 'foo>(prog(Jmp'foo))prog: undeclared labels found: '(foo)>(prog(Label'foo)(Jmp'foo))(list (Label 'foo) (Jmp 'foo))struct(struct%(s))s:string?struct(struct%%(s))s:string?struct(struct%%%(s))s:string?Creates a comment in the assembly code. The%constructor adds a comment toward the right side of the
+current line;%%creates a comment on its own line
+1 tab over;%%%creates a comment on its own line
+aligned to the left.Examples>(asm-display(prog(%%%"Start of foo")(Label'foo);Racket comments won't appear(%%"Inputs one argument in rdi")(Mov'rax'rdi)(Add'rax'rax)(%"double it")(Sub'rax1)(%"subtract one")(%%"we're done!")(Ret)))global foodefault relsection .text;;; Start of foofoo:;; Inputs one argument in rdimov rax, rdiadd rax, rax; double itsub rax, 1; subtract one;; we're done!retstruct(structOffset(ri))r:register?i:exact-integer?Creates an memory offset from a register. Offsets are used
+as arguments to instructions to indicate memory locations.
+An error is signalled when given invalid inputs.Examples>(Offset'rax0)(Offset 'rax 0)>(Offset'rax4.1)Offset: expects exact integer as second argument; given 4.1struct(structLabel(x))x:label?Creates a label from the given symbol. Each label in a
+program must be unique.  Register names cannot be used
+as label names.Examples>(Label'fred)(Label 'fred)>(Label"fred")Label: expects symbol; given "fred">(Label'rax)Label: cannot use register as label name; given 'raxstruct(structExtern(x))x:label?Declares an external label.struct(structCall(x))x:(or/clabel?register?)A call instruction.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Call'f)(Add'rax1)(Ret)(Label'f)(Mov'rax41)(Ret)))42struct(structRet())A return instruction.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Ret)))42struct(structMov(dstsrc))dst:(or/cregister?offset?)src:(or/cregister?offset?exact-integer?)A move instruction. Movessrctodst.Eitherdstorsrcmay be offsets, but not both.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rbx42)(Mov'rax'rbx)(Ret)))42>(Mov(Offset'rax0)(Offset'rbx0))Mov: cannot use two memory locations; given (Offset 'rax 0),(Offset 'rbx 0)struct(structAdd(dstsrc))dst:register?src:(or/cregister?offset?exact-integer?)An addition instruction. Addssrctodstand writes the result todst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax32)(Add'rax10)(Ret)))42struct(structSub(dstsrc))dst:register?src:(or/cregister?offset?exact-integer?)A subtraction instruction. Subtractssrcfrromdstand writes the result todst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax32)(Sub'rax10)(Ret)))22struct(structCmp(a1a2))a1:(or/cregister?offset?)a2:(or/cregister?offset?exact-integer?)Comparea1toa2.  Doing a comparison
+sets the status flags that affect the conditional instructions likeJe,Jl, etc.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Cmp'rax2)(Jg'l1)(Mov'rax0)(Label'l1)(Ret)))42struct(structJmp(x))x:(or/clabel?register?)Jump to labelx.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Jmp'l1)(Mov'rax0)(Label'l1)(Ret)))42>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Pop'rbx)(Jmp'rbx)))42struct(structJe(x))x:(or/clabel?register?)Jump to labelxif the conditional flag is set to “equal.”Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Cmp'rax2)(Je'l1)(Mov'rax0)(Label'l1)(Ret)))0struct(structJne(x))x:(or/clabel?register?)Jump to labelxif the conditional flag is set to “not equal.”Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Cmp'rax2)(Jne'l1)(Mov'rax0)(Label'l1)(Ret)))42struct(structJl(x))x:(or/clabel?register?)Jump to labelxif the conditional flag is set to “less than.”Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Cmp'rax2)(Jl'l1)(Mov'rax0)(Label'l1)(Ret)))0struct(structJg(x))x:(or/clabel?register?)Jump to labelxif the conditional flag is set to “greater than.”Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Cmp'rax2)(Jg'l1)(Mov'rax0)(Label'l1)(Ret)))42struct(structAnd(dstsrc))dst:(or/cregister?offset?)src:(or/cregister?offset?exact-integer?)Compute logical “and” ofdstandsrcand put result indst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax11);#b1011 = 11(And'rax14);#b1110 = 14(Ret)))10;#b1010 = 10struct(structOr(dstsrc))dst:(or/cregister?offset?)src:(or/cregister?offset?exact-integer?)Compute logical “or” ofdstandsrcand put result indst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax11);#b1011 = 11(Or'rax14);#b1110 = 14(Ret)))15;#b1111 = 15struct(structXor(dstsrc))dst:(or/cregister?offset?)src:(or/cregister?offset?exact-integer?)Compute logical “exclusive or” ofdstandsrcand put result indst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax11);#b1011 = 11(Xor'rax14);#b1110 = 14(Ret)))5;#b0101 = 5struct(structSal(dsti))dst:register?i:(integer-in063)Shiftdstto the leftibits and put result indst.
+The leftmost bits are discarded.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax4);#b100 = 4 = 2^2(Sal'rax6)(Ret)))256;#b100000000 = 256struct(structSar(dsti))dst:register?i:(integer-in063)Shiftdstto the rightibits and put result indst.
+The rightmost bits are discarded.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax256);#b100000000 = 256(Sar'rax6)(Ret)))4;#b100 = 4>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax269);#b100001101 = 269(Sar'rax6)(Ret)))4;#b100 = 4struct(structPush(a1))a1:(or/cexact-integer?register?)Decrements the stack pointer and then stores the source
+operand on the top of the stack.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Push'rax)(Mov'rax0)(Pop'rax)(Ret)))42struct(structPop(a1))a1:register?Loads the value from the top of the stack to the destination operand and then increments the stack pointer.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Push'rax)(Mov'rax0)(Pop'rax)(Ret)))42struct(structLea(dstx))dst:(or/cregister?offset?)x:label?Loads the address of the given label intodst.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Lea'rbx'done)(Mov'rax42)(Jmp'rbx)(Mov'rax0)(Label'done)(Ret)))423.7From a86 to x86(requirea86/printer)package:langsprocedure(asm-displayis)→void?is:(listofinstruction?)Prints an a86 program to the current output port in nasm syntax.Examples>(asm-display(prog(Global'entry)(Label'entry)(Mov'rax42)(Ret)))global entrydefault relsection .textglobal entryentry:mov rax, 42retprocedure(asm-stringis)→string?is:(listofinstruction?)Converts an a86 program to a string in nasm syntax.Examples>(asm-string(prog(Global'entry)(Label'entry)(Mov'rax42)(Ret)))"global entry\ndefault rel\nsection .text\nglobal entry\nentry:\nmov rax, 42\nret\n"3.8An Interpreter for a86(requirea86/interp)package:langsAs you’ve seen throughout this chapter,a86is equiped with an interpreter, which enables you to run
+assembly programs from within Racket. This won’t be directly
+useful in building a compiler, but it will be very handy for
+interactively exploring assembly programs and making examples
+and test cases for your compiler.The simplest form of interpreting an a86 program is to useasm-interp.procedure(asm-interpis)→integer?is:(listofinstruction?)Assemble, link, and execute an a86 program.Examples>(asm-interp(prog(Global'entry)(Label'entry)(Mov'rax42)(Ret)))42Programs do not have to start with'entry. The
+ interpreter will jump to whatever the first label in the
+ program is:Examples>(asm-interp(prog(Global'f)(Label'f)(Mov'rax42)(Ret)))42The argument ofasm-interpshould be a complete,
+ well-formed a86 program. For best results, always useprogto construct the program so that error
+ checking is done early. If you useprogandasm-interpand you get a NASM syntax error message,
+ please report it to the course staff as this is a bug in the
+ interpreter.While we try to make syntax errors impossible, it is
+ possible—quite easy, in fact—to write well-formed, but
+ erroneous assembly programs. For example, this program tries
+ to jump to null, which causes a segmentation fault:Examples>(asm-interp(prog(Global'crash)(Label'crash)(Mov'rax0)(Jmp'rax)))invalid memory reference.Some debugging context lostIt is often the case that we want our assembly programs to
+interact with the oustide or to use functionality
+implemented in other programming languages. For that reason,
+it is possible to link in object files to the running of an
+a86 program.The mechanism for controlling which objects should be linked
+in is a parameter calledcurrent-objs, which
+contains a list of paths to object files which are linked to
+the assembly code when it is interpreted.parameter(current-objs)→(listofpath-string?)(current-objsobjs)→void?objs:(listofpath-string?)='()Parameter that controls object files that will be linked in to
+assembly code when runningasm-interp.For example, let’s implement a GCD function in C:a86/gcd.cintgcd(intn1,intn2) {return(n2 ==0) ? n1 : gcd(n2, n1 % n2);}First, compile the program to an object file:shell>gcc -fPIC -c gcd.c -o gcd.oThe option-fPICis important; it causes the C compiler
+to emit “position independent code,” which is what enables
+Racket to dynamically load and run the code.Once the object file exists, using thecurrent-objsparameter, we can run code that uses things defined in the C
+code:Examples>(parameterize((current-objs'("gcd.o")))(asm-interp(prog(Extern'gcd)(Global'f)(Label'f)(Mov'rdi11571)(Mov'rsi1767)(Sub'rsp8)(Call'gcd)(Add'rsp8)(Ret))))57This will be particularly relevant for writing a compiler
+where emitted code will make use of functionality defined in
+a runtime system.Note that if you forget to setcurrent-objs, you will get a
+linking error saying a symbol is undefined:Examples>(asm-interp(prog(Extern'gcd)(Global'f)(Label'f)(Mov'rdi11571)(Mov'rsi1767)(Sub'rsp8)(Call'gcd)(Add'rsp8)(Ret)))link error: symbol gcd not defined in linked objects: ()use `current-objs` to link in object containing symboldefinition.procedure(asm-interp/ioisin)→(consinteger?string?)is:(listofinstruction?)in:string?Likeasm-interp, but usesinfor input and produce the result along
+with any output as a string.contents← prevupnext →

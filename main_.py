@@ -117,7 +117,7 @@ def get_plain_text(html):
     
     # Create a BeautifulSoup object.
     soup = BeautifulSoup(html, features='lxml')
-
+    
     # Remove all script and style tags.
     for script in soup.find_all('script'):
         script.extract()
