@@ -1,6 +1,7 @@
-.env
 *.json
 /localllm
 /__pycache__
 *.pyc
 /chroma_db
+/text_files
+/html_files
